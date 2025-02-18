@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "DeepSeek Magic",
+  "version": "1.0",
+  "description": "Enhance your DeepSeek Chat experience with advanced features and chat management",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "unlimitedStorage",
+    "activeTab",
+    "notifications",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*"
+  ],
+  "icons": {
+    "16": "icons/deepseek1.png",
+    "48": "icons/deepseek1.png",
+    "128": "icons/deepseek1.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/deepseek1.png",
+      "48": "icons/deepseek1.png",
+      "128": "icons/deepseek1.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["db.js"],
+      "matches": ["https://chat.deepseek.com/*"]
+    }
+  ]
+} 

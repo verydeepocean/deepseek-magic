@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DeepSeek Magic</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <div class="header">
+    <h1 class="header-title">DeepSeek Magic</h1>
+    <div class="theme-buttons">
+      <button class="theme-btn" data-theme="light" title="Light theme">☀️</button>
+      <button class="theme-btn" data-theme="dark" title="Dark theme">🌙</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="favorites">Favorite Chats</button>
+    <button class="tab-btn" data-tab="prompts">Prompts</button>
+  </div>
+
+  <div class="tab-content active" id="favorites-tab">
+    <div class="search-box">
+      <input type="text" id="favoritesSearchInput" class="search-input" placeholder="Search favorite chats...">
+    </div>
+    <div id="favoritesList" class="favorites-list">
+      <!-- Favorite chats will be listed here -->
+    </div>
+  </div>
+
+  <div class="tab-content" id="prompts-tab">
+    <div class="search-box">
+      <input type="text" id="promptSearchInput" class="search-input" placeholder="Search prompts...">
+    </div>
+    <div id="promptsList"></div>
+  </div>
+
+  <!-- Modal for editing prompts -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit Prompt</h2>
+        <button class="modal-close" id="closeModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="editPromptTitle">Title</label>
+          <input type="text" id="editPromptTitle" placeholder="Enter prompt title">
+        </div>
+        <div class="form-group">
+          <label for="editPromptTags">Tags (press Enter to add)</label>
+          <div class="tags-input" id="editPromptTags">
+            <input type="text" placeholder="Add tags...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="editPromptInput">Prompt</label>
+          <textarea id="editPromptInput" class="prompt-input" placeholder="Edit your prompt here"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelEdit">Cancel</button>
+        <button class="btn btn-primary" id="saveEdit">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for adding new prompt -->
+  <div class="modal-overlay" id="addPromptModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Add New Prompt</h2>
+        <button class="modal-close" id="closeAddPromptModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="promptTitle">Title</label>
+          <input type="text" id="promptTitle" class="prompt-title-input" placeholder="Enter prompt title">
+        </div>
+        <div class="form-group">
+          <label for="promptInput">Prompt</label>
+          <textarea id="promptInput" class="prompt-input" placeholder="Enter your prompt here"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="promptTags">Tags (press Enter to add)</label>
+          <div class="tags-input" id="promptTags">
+            <input type="text" placeholder="Add tags...">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelAddPrompt">Cancel</button>
+        <button id="savePrompt" class="btn btn-primary">Save Prompt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Add Prompt button -->
+  <button id="addPromptButton" class="floating-button">+ Add Prompt</button>
+
+  <!-- Modal for editing favorites -->
+  <div class="modal-overlay" id="editFavoriteModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit Favorite</h2>
+        <button class="modal-close" id="closeFavoriteModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="editFavoriteTitle">Title</label>
+          <input type="text" id="editFavoriteTitle" placeholder="Enter favorite title">
+        </div>
+        <div class="form-group">
+          <label for="editFavoriteDescription">Description</label>
+          <textarea id="editFavoriteDescription" class="prompt-input" placeholder="Enter description"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="editFavoriteTags">Tags (press Enter to add)</label>
+          <div class="tags-input" id="editFavoriteTags">
+            <input type="text" placeholder="Add tags...">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="cancelFavoriteEdit">Cancel</button>
+        <button class="btn btn-primary" id="saveFavoriteEdit">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for chat history -->
+  <div class="modal-overlay" id="chatHistoryModal">
+    <div class="modal chat-history-modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Chat History</h2>
+        <button class="modal-close" id="closeChatHistoryModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="chatHistoryContent" class="chat-history-content">
+          <!-- Chat messages will be inserted here -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="updateChatBtn">Update Chat</button>
+        <button class="btn" id="closeChatHistoryBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html> 

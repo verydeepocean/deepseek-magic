@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DeepSeek Favorites</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="tabs">
+        <button class="tab-btn active" id="favoritesTab">FAVORITE CHATS</button>
+        <button class="tab-btn" id="promptsTab">PROMPTS</button>
+      </div>
+    </div>
+    <div class="header-buttons">
+      <div class="header-buttons-container">
+        <div class="header-buttons-row">
+          <button class="theme-btn" id="lightTheme" title="Light Theme">🌞</button>
+          <button class="theme-btn" id="darkTheme" title="Dark Theme">🌙</button>
+        </div>
+        <div class="header-buttons-row">
+          <button class="theme-btn" id="exportBtn" title="Export to .json file">⬆️</button>
+          <button class="theme-btn" for="importFile" title="Import from .json file">⬇️
+            <input type="file" id="importFile" accept=".json" style="display: none;">
+          </button>
+        </div>
+      </div>
+      <div class="header-buttons-delete">
+        <button class="theme-btn settings-btn" id="settingsBtn" title="Settings">⚙️</button>
+        <button class="theme-btn clear-btn" id="clearDataBtn" title="Clear all data">🗑️</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Favorites Tab Container -->
+  <div id="favoritesSection" class="section active">
+    <div class="search-container">
+      <input type="text" id="searchInput" placeholder="🔍 Search by title and description...">
+    </div>
+    <div id="favoritesList"></div>
+  </div>
+
+  <!-- Prompts Tab Container -->
+  <div id="promptsSection" class="section">
+    <div class="search-container">
+      <input type="text" id="promptSearchInput" placeholder="🔍 Search prompts...">
+    </div>
+    <div id="promptsList">
+      <!-- Prompts will be here -->
+    </div>
+    <div class="add-prompt-container">
+      <button class="add-prompt-btn" id="addPromptBtn">+ Add Prompt</button>
+    </div>
+  </div>
+
+  <!-- Modal Window -->
+  <div id="chatModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Chat History</div>
+        <button class="copy-btn" title="Copy chat history">
+          📋 Copy
+        </button>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="chatContent">
+          <!-- Chat content will be loaded here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="settings-modal">
+    <div class="settings-content">
+      <div class="settings-header">
+        <div class="settings-title">Settings</div>
+        <button class="settings-close">&times;</button>
+      </div>
+      <div class="settings-form">
+        <div class="settings-group">
+          <label for="provider">API Provider</label>
+          <select id="provider">
+            <option value="openrouter">OpenRouter</option>
+            <option value="google">Google AI</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="apiKey">API Key</label>
+          <input type="password" id="apiKey" placeholder="Enter your API key">
+        </div>
+        <div class="settings-group">
+          <label for="model">Model</label>
+          <div class="model-container">
+            <select id="model">
+              <!-- Options will be populated by JavaScript -->
+            </select>
+            <button type="button" class="check-connection-btn" id="checkConnectionBtn" title="Check Connection">🔄</button>
+          </div>
+        </div>
+        <div class="settings-group">
+          <label for="summaryPrompt">Summary Prompt Template</label>
+          <textarea id="summaryPrompt" placeholder="Enter prompt template for generating summaries" style="min-height: 120px;">Please generate a concise summary of this chat conversation in 2-3 sentences: {text}</textarea>
+        </div>
+        <div class="settings-group title-prompt">
+          <label for="titlePrompt">Title Prompt Template</label>
+          <textarea id="titlePrompt" placeholder="Enter prompt template for generating titles">Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: {text}</textarea>
+        </div>
+        <div class="settings-group tags-prompt">
+          <label for="tagsPrompt">Tags Prompt Template</label>
+          <textarea id="tagsPrompt" placeholder="Enter prompt template for generating tags">Generate 3-5 relevant tags for this chat. Each tag should be 1-2 words, separated by spaces. Tags should reflect the main topics, technologies, or concepts discussed. Return only the tags without quotes or commas: {text}</textarea>
+        </div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-secondary settings-close">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveSettings">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html> 
