@@ -233,11 +233,22 @@ console.log('Background script loaded');
 // Create context menu item
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Extension installed/updated');
-  chrome.contextMenus.create({
-    id: 'addToFavorites',
-    title: 'Add to Favorites',
-    contexts: ['page'],
-    documentUrlPatterns: ['https://chat.deepseek.com/*']
+  
+  // Remove existing menu items first
+  chrome.contextMenus.removeAll(() => {
+    // Create new menu item
+    chrome.contextMenus.create({
+      id: 'addToFavorites',
+      title: 'Add to Favorites ⭐',
+      contexts: ['page', 'selection'],
+      documentUrlPatterns: ['https://chat.deepseek.com/*']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Error creating context menu:', chrome.runtime.lastError);
+      } else {
+        console.log('Context menu created successfully');
+      }
+    });
   });
 });
 
@@ -268,104 +279,26 @@ function showNotification(message, isError = false) {
   });
 }
 
-// Handle context menu clicks
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'addToFavorites') {
-    try {
-      console.log('Adding to favorites...');
-      
-      // Ensure database is initialized
-      await favoritesDB.ensureInitialized();
-      
-      // Check if URL already exists in favorites
-      const existingFavorites = await favoritesDB.getFavorites();
-      const existingFavorite = existingFavorites.find(f => f.url === tab.url);
-      
-      if (existingFavorite) {
-        console.log('Chat already in favorites:', existingFavorite);
-        showNotification('This chat is already in favorites! 📌', true);
-        return;
-      }
-      
-      // Try to get chat info with retries
-      let response = null;
-      let retryCount = 3;
-      
-      while (retryCount > 0) {
-        try {
-          // Inject content script if needed
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['content.js']
-          }).catch(err => console.log('Content script already loaded'));
-          
-          // Add delay between attempts
-          if (retryCount < 3) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-          
-          // Get chat content from content script
-          response = await chrome.tabs.sendMessage(tab.id, { 
-            type: 'GET_CHAT_INFO'
-          });
-          
-          console.log('Received response:', response);
-          
-          if (response && response.status === 'ok' && response.title) {
-            break;
-          }
-        } catch (error) {
-          console.log(`Attempt ${4 - retryCount} failed:`, error);
-        }
-        retryCount--;
-      }
-      
-      if (!response || response.status !== 'ok' || !response.title) {
-        throw new Error('Failed to get chat info after multiple attempts');
-      }
-      
-      // Save to favorites
-      const favorite = {
-        id: Date.now().toString(),
-        url: tab.url,
-        title: response.title,
-        date: new Date(),
-        messages: response.messages,
-        metadata: {
-          ...response.metadata,
-          lastUpdated: new Date()
-        }
-      };
-      
-      console.log('Saving favorite:', favorite);
-      
-      await favoritesDB.addFavorite(favorite);
-      console.log('Successfully added to favorites');
-      
-      // Show success notification
-      showNotification('Chat added to favorites! ⭐');
-      
-      // Notify all extension pages about the update
-      chrome.runtime.sendMessage({
-        type: 'REFRESH_FAVORITES'
-      }).catch(error => {
-        console.log('No listeners available for refresh message');
-      });
-      
-    } catch (error) {
-      console.error('Error adding to favorites:', error);
-      showNotification('Error adding to favorites: ' + error.message, true);
-    }
+// Function to send notification to content script
+async function sendContentNotification(tabId, message, isError = false) {
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: 'SHOW_NOTIFICATION',
+      message,
+      isError
+    });
+  } catch (error) {
+    console.error('Error sending notification:', error);
   }
-});
+}
 
-// Listen for messages from content script and popup
+// Handle content script ready message
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Received message:', message.type, 'from:', sender.tab ? 'content script' : 'popup');
+  console.log('Background script received message:', message.type, 'from:', sender.tab ? 'content script' : 'popup');
   
   try {
     // Handle content script ready message
-  if (message.type === 'CONTENT_SCRIPT_READY') {
+    if (message.type === 'CONTENT_SCRIPT_READY') {
       console.log('Content script is ready in tab:', sender.tab?.id);
       sendResponse({ status: 'ok' });
       return true;
@@ -495,6 +428,69 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
+    // Handle clear all data message
+    if (message.type === 'CLEAR_ALL_DATA') {
+      (async () => {
+        try {
+          console.log('Clearing all databases...');
+          
+          // Close existing connections
+          if (favoritesDB.db) {
+            favoritesDB.db.close();
+            favoritesDB.db = null;
+            favoritesDB.initialized = false;
+          }
+          if (promptsDB.db) {
+            promptsDB.db.close();
+            promptsDB.db = null;
+            promptsDB.initialized = false;
+          }
+          
+          // Delete both databases
+          await Promise.all([
+            new Promise((resolve, reject) => {
+              const request = indexedDB.deleteDatabase('favoritesDB');
+              request.onsuccess = () => {
+                console.log('Favorites database deleted successfully');
+                resolve();
+              };
+              request.onerror = () => reject(new Error('Failed to delete favorites database'));
+            }),
+            new Promise((resolve, reject) => {
+              const request = indexedDB.deleteDatabase('promptsDB');
+              request.onsuccess = () => {
+                console.log('Prompts database deleted successfully');
+                resolve();
+              };
+              request.onerror = () => reject(new Error('Failed to delete prompts database'));
+            })
+          ]);
+          
+          console.log('All databases cleared successfully');
+          
+          // Reinitialize databases
+          await Promise.all([
+            favoritesDB.init(),
+            promptsDB.init()
+          ]);
+          
+          sendResponse({ status: 'ok' });
+          
+          // Notify other parts of the extension
+          chrome.runtime.sendMessage({ 
+            type: 'REFRESH_FAVORITES'
+          }).catch(() => {
+            console.log('No listeners for refresh message');
+          });
+          
+        } catch (error) {
+          console.error('Error clearing databases:', error);
+          sendResponse({ status: 'error', error: error.message });
+        }
+      })();
+      return true;
+    }
+    
     // Unknown message type
     console.warn('Unknown message type:', message.type);
     sendResponse({ status: 'error', error: 'Unknown message type' });
@@ -504,5 +500,87 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ status: 'error', error: error.message });
   }
   
-  return true; // Keep message channel open for async response
+  return true;
+});
+
+// Update context menu handler
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  console.log('Context menu clicked:', info.menuItemId);
+  
+  if (info.menuItemId === 'addToFavorites') {
+    try {
+      console.log('Attempting to add to favorites for tab:', tab.id);
+      
+      // Ensure database is initialized
+      await favoritesDB.ensureInitialized();
+      
+      // Inject content script if not already injected
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        });
+        console.log('Content script injected successfully');
+      } catch (error) {
+        console.log('Content script already injected or injection failed:', error);
+      }
+      
+      // Get chat info from content script
+      console.log('Requesting chat info from content script...');
+      const response = await chrome.tabs.sendMessage(tab.id, { 
+        type: 'GET_CHAT_INFO'
+      }).catch(error => {
+        console.error('Error sending message to content script:', error);
+        throw new Error('Failed to communicate with page. Please refresh and try again.');
+      });
+      
+      console.log('Received response from content script:', response);
+      
+      if (response && response.status === 'ok') {
+        // Format current date
+        const now = new Date();
+        const formattedDate = now.toLocaleString('ru-RU', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+
+        const favorite = {
+          id: Date.now().toString(),
+          title: response.title,
+          url: tab.url,
+          timestamp: formattedDate,
+          date: now.toISOString(),
+          messages: response.messages,
+          metadata: {
+            ...response.metadata,
+            savedAt: formattedDate
+          }
+        };
+
+        console.log('Created favorite object:', favorite);
+
+        // Check if already in favorites
+        const favorites = await favoritesDB.getFavorites();
+        const exists = favorites.some(f => f.url === favorite.url);
+
+        if (!exists) {
+          await favoritesDB.addFavorite(favorite);
+          console.log('Successfully added to favorites');
+          await sendContentNotification(tab.id, 'Added to Favorites! ⭐');
+        } else {
+          console.log('Chat already in favorites');
+          await sendContentNotification(tab.id, 'Already in Favorites! 🔔', true);
+        }
+      } else {
+        throw new Error(response?.error || 'Failed to get chat info');
+      }
+    } catch (error) {
+      console.error('Error in addToFavorites:', error);
+      await sendContentNotification(tab.id, 'Error saving to favorites! ❌', true);
+    }
+  }
 }); 

@@ -14,22 +14,24 @@ function debounce(func, delay) {
 function initTheme() {
   const savedTheme = localStorage.getItem('theme') || 'light';
   document.documentElement.setAttribute('data-theme', savedTheme);
-  document.querySelector(`.theme-btn[data-theme="${savedTheme}"]`)?.classList.add('active');
+  updateThemeButton(savedTheme);
 }
 
 function setupThemeButtons() {
-  const themeButtons = document.querySelectorAll('.theme-btn');
-  themeButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const theme = btn.dataset.theme;
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
-      
-      // Update active state
-      themeButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    });
+  const themeToggle = document.querySelector('.theme-toggle');
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeButton(newTheme);
   });
+}
+
+function updateThemeButton(theme) {
+  const themeToggle = document.querySelector('.theme-toggle');
+  themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
+  themeToggle.title = `Switch to ${theme === 'light' ? 'dark' : 'light'} theme`;
 }
 
 // Notifications
@@ -311,13 +313,20 @@ function createFavoriteElement(favorite) {
     e.stopPropagation();
     if (confirm('Are you sure you want to remove this favorite?')) {
       try {
+        console.log('Starting favorite deletion for ID:', favorite.id);
         deleteBtn.disabled = true;
         deleteBtn.textContent = '⌛';
         
-        await chrome.runtime.sendMessage({ 
+        const response = await chrome.runtime.sendMessage({ 
           type: 'DELETE_FAVORITE',
           id: favorite.id
         });
+        
+        console.log('Delete favorite response:', response);
+        
+        if (response.status === 'error') {
+          throw new Error(response.error || 'Failed to delete favorite');
+        }
         
         div.classList.add('removing');
         setTimeout(() => {
@@ -326,7 +335,7 @@ function createFavoriteElement(favorite) {
         }, 300);
       } catch (error) {
         console.error('Error removing favorite:', error);
-        showNotification('Error removing favorite! ❌', true);
+        showNotification('Error removing favorite: ' + error.message, true);
         deleteBtn.disabled = false;
         deleteBtn.textContent = '🗑️';
         div.classList.remove('removing');
@@ -502,6 +511,37 @@ document.addEventListener('DOMContentLoaded', () => {
       chatHistoryModal.classList.remove('show');
     }
   });
+
+  // Добавляем обработчик для кнопки удаления
+  const deleteBtn = document.querySelector('.delete-btn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to clear all data?')) {
+        try {
+          console.log('Starting data clearance...');
+          
+          const response = await chrome.runtime.sendMessage({ 
+            type: 'CLEAR_ALL_DATA'
+          });
+          
+          console.log('Clear all data response:', response);
+          
+          if (response.status === 'error') {
+            throw new Error(response.error || 'Failed to clear data');
+          }
+          
+          showNotification('All data has been cleared successfully');
+          setTimeout(() => {
+            location.reload();
+          }, 500);
+          
+        } catch (error) {
+          console.error('Error during data clearance:', error);
+          showNotification('Error clearing data: ' + error.message, true);
+        }
+      }
+    });
+  }
 });
 
 // Load favorites
@@ -958,6 +998,113 @@ if (promptSearchInput) {
 
   promptSearchInput.addEventListener('input', (e) => {
     debouncedPromptSearch(e.target.value.trim());
+  });
+}
+
+// Инициализация базы данных
+let db = null;
+
+async function initDatabase() {
+  return new Promise((resolve, reject) => {
+    console.log('Starting database initialization...');
+    const dbRequest = indexedDB.open('deepseekDB', 1);
+
+    dbRequest.onupgradeneeded = function(event) {
+      const db = event.target.result;
+      console.log('Database upgrade needed, creating stores...');
+      
+      // Создаем хранилища, если их нет
+      if (!db.objectStoreNames.contains('favorites')) {
+        console.log('Creating favorites store...');
+        db.createObjectStore('favorites', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('prompts')) {
+        console.log('Creating prompts store...');
+        db.createObjectStore('prompts', { keyPath: 'id' });
+      }
+      console.log('Stores created successfully');
+    };
+
+    dbRequest.onsuccess = function(event) {
+      db = event.target.result;
+      console.log('Database initialized successfully. Available stores:', Array.from(db.objectStoreNames));
+      
+      // Проверяем содержимое хранилищ
+      const transaction = db.transaction(['favorites', 'prompts'], 'readonly');
+      const favoritesStore = transaction.objectStore('favorites');
+      const promptsStore = transaction.objectStore('prompts');
+      
+      favoritesStore.count().onsuccess = function(e) {
+        console.log('Number of favorites:', e.target.result);
+      };
+      
+      promptsStore.count().onsuccess = function(e) {
+        console.log('Number of prompts:', e.target.result);
+      };
+      
+      resolve(db);
+    };
+
+    dbRequest.onerror = function(event) {
+      console.error('Database initialization error:', event.target.error);
+      reject(new Error('Failed to initialize database'));
+    };
+  });
+}
+
+// Функция для очистки всех данных
+async function clearAllData() {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!db) {
+        console.error('Database not initialized');
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const storeNames = Array.from(db.objectStoreNames);
+      console.log('Attempting to clear stores:', storeNames);
+
+      if (storeNames.length === 0) {
+        console.error('No stores found in database');
+        reject(new Error('No stores found'));
+        return;
+      }
+
+      const transaction = db.transaction(storeNames, 'readwrite');
+      let completed = 0;
+
+      storeNames.forEach(storeName => {
+        const store = transaction.objectStore(storeName);
+        const request = store.clear();
+
+        request.onsuccess = () => {
+          console.log(`Successfully cleared store: ${storeName}`);
+          completed++;
+          if (completed === storeNames.length) {
+            resolve();
+          }
+        };
+
+        request.onerror = (error) => {
+          console.error(`Failed to clear store ${storeName}:`, error);
+          reject(new Error(`Failed to clear store: ${storeName}`));
+        };
+      });
+
+      transaction.oncomplete = () => {
+        console.log('All stores cleared successfully');
+        resolve();
+      };
+
+      transaction.onerror = (error) => {
+        console.error('Transaction failed:', error);
+        reject(new Error('Transaction failed'));
+      };
+    } catch (error) {
+      console.error('Error in clearAllData:', error);
+      reject(error);
+    }
   });
 }
 

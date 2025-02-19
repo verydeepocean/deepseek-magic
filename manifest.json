@@ -39,7 +39,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["db.js"],
+      "resources": ["db.js", "main.css"],
       "matches": ["https://chat.deepseek.com/*"]
     }
   ]

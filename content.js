@@ -1,6 +1,47 @@
 // Register content script
 console.log('Content script loaded');
 
+// Function to load external CSS file
+function loadCSS(file) {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.type = 'text/css';
+    link.href = chrome.runtime.getURL(file);
+    link.onload = () => resolve();
+    link.onerror = () => reject(new Error(`Failed to load ${file}`));
+    document.head.appendChild(link);
+  });
+}
+
+// Initialize content script
+async function initializeContentScript() {
+  // Add initialization message to verify content script is running
+  console.log('Initializing content script...');
+  
+  try {
+    // Load main.css before initializing notifications
+    await loadCSS('main.css');
+    console.log('Successfully loaded main.css');
+  } catch (error) {
+    console.warn('Failed to load main.css:', error);
+  }
+
+  // Notify background script that content script is ready
+  chrome.runtime.sendMessage({ type: 'CONTENT_SCRIPT_READY' })
+    .then(response => {
+      if (response?.status === 'ok') {
+        console.log('Successfully connected to background script');
+      }
+    })
+    .catch(error => {
+      console.warn('Initial connection to background script failed:', error);
+    });
+}
+
+// Call initialization
+initializeContentScript();
+
 // Function to get message content with proper HTML and text
 function getMessageContent(element) {
   return {
@@ -152,7 +193,43 @@ async function getChatContent() {
   }
 }
 
-// Listen for messages from the extension
+// Function to show notifications
+function showNotification(message, isError = false) {
+  // Remove any existing notifications
+  const existingNotifications = document.querySelectorAll('.deepseek-notification');
+  existingNotifications.forEach(notification => notification.remove());
+
+  // Create new notification
+  const notification = document.createElement('div');
+  notification.className = `deepseek-notification ${isError ? 'error' : 'success'}`;
+  
+  // Split message into title and description if it contains a newline
+  const [title, ...descriptionParts] = message.split('\n');
+  const description = descriptionParts.join('\n');
+  
+  // Create notification content
+  notification.innerHTML = `
+    <div class="title">${title}</div>
+    ${description ? `<div class="description">${description}</div>` : ''}
+  `;
+  
+  // Add to page
+  document.documentElement.appendChild(notification);
+  
+  // Trigger animation
+  requestAnimationFrame(() => {
+    notification.classList.add('show');
+  });
+  
+  // Auto-remove after delay
+  const duration = isError ? 5000 : 3000;
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 300);
+  }, duration);
+}
+
+// Update the message listener to be more robust
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Content script received message:', message);
   
@@ -160,8 +237,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Handle async response
     (async () => {
       try {
+        console.log('Getting chat content...');
         const chatContent = await getChatContent();
         console.log('Got chat content:', chatContent);
+        
+        if (!chatContent || !chatContent.title) {
+          console.error('No chat content or title found');
+          sendResponse({ 
+            status: 'error', 
+            error: 'Could not find chat title. Please make sure you are on a chat page.' 
+          });
+          return;
+        }
+        
+        if (!chatContent.messages || chatContent.messages.length === 0) {
+          console.error('No chat messages found');
+          sendResponse({ 
+            status: 'error', 
+            error: 'No chat messages found. Please make sure you are on a chat page with messages.' 
+          });
+          return;
+        }
+        
+        console.log('Sending successful response with chat content');
         sendResponse({ 
           status: 'ok', 
           title: chatContent.title,
@@ -170,15 +268,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       } catch (error) {
         console.error('Error getting chat info:', error);
-        sendResponse({ status: 'error', error: error.message });
+        sendResponse({ 
+          status: 'error', 
+          error: error.message || 'Failed to get chat information' 
+        });
       }
     })();
-    return true;
+    return true; // Keep the message channel open for async response
   }
   
   if (message.type === 'SHOW_NOTIFICATION') {
-    showNotification(message.message, message.isError);
-    sendResponse({ status: 'ok' });
+    try {
+      console.log('Showing notification:', message.message, 'isError:', message.isError);
+      showNotification(message.message, message.isError);
+      sendResponse({ status: 'ok' });
+    } catch (error) {
+      console.error('Error showing notification:', error);
+      sendResponse({ status: 'error', error: error.message });
+    }
     return true;
   }
   
