@@ -5,7 +5,7 @@
   <title>DeepSeek Magic</title>
   <link rel="stylesheet" href="main.css">
 </head>
-<body>
+<body class="deepseek-extension-body deepseek-extension-root">
   <div class="header">
     <h1 class="header-title">DeepSeek Magic</h1>
     <div class="theme-buttons">
@@ -17,11 +17,15 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="favorites">Favorite Chats</button>
     <button class="tab-btn" data-tab="prompts">Prompts</button>
+    <button class="tab-btn" data-tab="notes">Notes</button>
   </div>
 
   <div class="tab-content active" id="favorites-tab">
     <div class="search-box">
       <input type="text" id="favoritesSearchInput" class="search-input" placeholder="Search favorite chats...">
+    </div>
+    <div id="favoriteFrequentTags" class="frequent-tags-container">
+      <!-- Frequent tags will be displayed here -->
     </div>
     <div id="favoritesList" class="favorites-list">
       <!-- Favorite chats will be listed here -->
@@ -32,7 +36,17 @@
     <div class="search-box">
       <input type="text" id="promptSearchInput" class="search-input" placeholder="Search prompts...">
     </div>
+    <div id="promptFrequentTags" class="frequent-tags-container">
+      <!-- Frequent tags will be displayed here -->
+    </div>
     <div id="promptsList"></div>
+  </div>
+
+  <div class="tab-content" id="notes-tab">
+    <div class="search-box">
+      <input type="text" id="notesSearchInput" class="search-input" placeholder="Search notes...">
+    </div>
+    <div id="notesList" class="notes-list"></div>
   </div>
 
   <!-- Modal for editing prompts -->
@@ -147,6 +161,34 @@
     </div>
   </div>
 
-  <script src="popup.js"></script>
+  <!-- Modal for adding/editing note -->
+  <div class="modal-overlay" id="noteModal">
+    <div class="modal">
+      <div class="modal-header">
+        <button class="modal-close" id="closeNoteModal">×</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="noteContent" class="note-content-input" placeholder="Enter your note here..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for viewing note -->
+  <div class="modal-overlay" id="viewNoteModal">
+    <div class="modal">
+      <div class="modal-header">
+        <button class="edit-note-btn" id="editNoteFromView" title="Edit note">✏️</button>
+        <button class="modal-close" id="closeViewNoteModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="viewNoteContent" class="note-content-view"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Add Note button -->
+  <button id="addNoteButton" class="floating-button">+ Add Note</button>
+
+  <script type="module" src="popup.js"></script>
 </body>
 </html> 

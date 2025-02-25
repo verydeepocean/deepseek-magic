@@ -241,7 +241,10 @@ chrome.runtime.onInstalled.addListener(() => {
       id: 'addToFavorites',
       title: 'Add to Favorites ⭐',
       contexts: ['page', 'selection'],
-      documentUrlPatterns: ['https://chat.deepseek.com/*']
+      documentUrlPatterns: [
+        'https://chat.deepseek.com/*',
+        'https://aistudio.google.com/*'
+      ]
     }, () => {
       if (chrome.runtime.lastError) {
         console.error('Error creating context menu:', chrome.runtime.lastError);
@@ -282,11 +285,20 @@ function showNotification(message, isError = false) {
 // Function to send notification to content script
 async function sendContentNotification(tabId, message, isError = false) {
   try {
+    console.log(`Sending notification to tab ${tabId}:`, message, 'isError:', isError);
+    
+    // Get tab info to check URL
+    const tab = await chrome.tabs.get(tabId);
+    console.log('Tab URL:', tab.url);
+    
+    // Send message to content script
     await chrome.tabs.sendMessage(tabId, {
       type: 'SHOW_NOTIFICATION',
       message,
       isError
     });
+    
+    console.log('Notification message sent successfully');
   } catch (error) {
     console.error('Error sending notification:', error);
   }
@@ -560,6 +572,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             savedAt: formattedDate
           }
         };
+
+        // Add tags based on URL
+        favorite.tags = [];
+        if (tab.url.includes('aistudio.google.com')) {
+          favorite.tags.push('gemini');
+        } else if (tab.url.includes('chat.deepseek.com')) {
+          favorite.tags.push('deepseek');
+        }
 
         console.log('Created favorite object:', favorite);
 

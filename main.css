@@ -1,4 +1,40 @@
-:root {
+/* Ensure all styles are scoped to extension elements */
+.deepseek-extension-root {
+  width: 400px;
+  height: 600px;
+  margin: 0;
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+  transition: all 0.3s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* Scope all other styles to extension root */
+.deepseek-extension-root :is(
+  .header,
+  .header-title,
+  .theme-buttons,
+  .theme-btn,
+  .search-box,
+  .search-input,
+  .favorites-list,
+  .favorite-item,
+  .chat-message,
+  .message-content,
+  .modal,
+  .modal-overlay,
+  .notification
+) {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+/* Define variables only within our extension scope */
+.deepseek-extension-root {
   --bg-color: #f8f9fa;
   --text-color: #1a1a1a;
   --border-color: #e9ecef;
@@ -19,7 +55,9 @@
   --modal-overlay-color: rgba(0, 0, 0, 0.5);
 }
 
-[data-theme="dark"] {
+/* Dark theme variables scoped to our extension */
+.deepseek-extension-root[data-theme="dark"],
+[data-theme="dark"] .deepseek-extension-root {
   --bg-color: #212529;
   --text-color: #f8f9fa;
   --border-color: #343a40;
@@ -34,6 +72,39 @@
   --modal-shadow-color: rgba(0, 0, 0, 0.3);
 }
 
+/* Scope body styles to our extension popup only */
+.deepseek-extension-body {
+  width: 400px;
+  height: 600px;
+  margin: 0;
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+  transition: all 0.3s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Smooth scrollbar for Webkit browsers - scoped to our extension */
+.deepseek-extension-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.deepseek-extension-body::-webkit-scrollbar-track {
+  background: var(--bg-color);
+}
+
+.deepseek-extension-body::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+
+.deepseek-extension-root .header {
+  position: sticky;
+}
+
+/* Remove duplicate body styles that might be overriding our themed styles */
 body {
   width: 400px;
   height: 600px;
@@ -154,12 +225,120 @@ body::-webkit-scrollbar-thumb {
   font-size: 14px;
   box-sizing: border-box;
   transition: all 0.3s ease;
+  display: block !important;
+  appearance: textfield !important;
+  -webkit-appearance: textfield !important;
+  -moz-appearance: textfield !important;
 }
 
 .search-input:focus {
   border-color: var(--link-color);
   box-shadow: 0 0 0 3px var(--focus-shadow-color);
   outline: none;
+}
+
+/* Hide any remove buttons and pseudo-elements for tags */
+.prompt-item .tag::after,
+.prompt-item .tag::before,
+.prompt-item .tag > button,
+.prompt-item .tag > *:not(text),
+.prompt-item .tag .tag-remove,
+.prompt-item .tag-remove,
+.search-input .tag::after,
+.search-input .tag::before,
+.search-input .tag > button,
+.search-input .tag > *:not(text),
+.search-input .tag .tag-remove,
+.search-input .tag-remove {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: none !important;
+  position: static !important;
+  float: none !important;
+  clear: both !important;
+}
+
+/* Принудительно убираем любые псевдоэлементы и кнопки отмены */
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-decoration,
+.search-input::-webkit-search-results-button,
+.search-input::-webkit-search-results-decoration,
+.search-input::-webkit-inner-spin-button,
+.search-input::-webkit-outer-spin-button,
+.search-input::-webkit-clear-button,
+.search-input::-ms-clear,
+.search-input::-ms-reveal,
+#promptSearchInput::-webkit-search-cancel-button,
+#promptSearchInput::-webkit-search-decoration,
+#promptSearchInput::-webkit-search-results-button,
+#promptSearchInput::-webkit-search-results-decoration,
+#promptSearchInput::-webkit-inner-spin-button,
+#promptSearchInput::-webkit-outer-spin-button,
+#promptSearchInput::-webkit-clear-button,
+#promptSearchInput::-ms-clear,
+#promptSearchInput::-ms-reveal {
+  display: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Убираем любые дополнительные стили и вложенные элементы */
+.search-input *,
+#promptSearchInput *,
+#favoritesSearchInput *,
+#notesSearchInput * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: static !important;
+  float: none !important;
+  clear: both !important;
+}
+
+/* Принудительно устанавливаем базовые стили для поля поиска */
+.search-input,
+#promptSearchInput,
+#favoritesSearchInput,
+#notesSearchInput {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 100% !important;
+  height: auto !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px !important;
+  background: var(--btn-bg) !important;
+  color: var(--text-color) !important;
+  font-size: 14px !important;
+  line-height: normal !important;
+  box-sizing: border-box !important;
+  appearance: textfield !important;
+  -webkit-appearance: textfield !important;
+  -moz-appearance: textfield !important;
+  text-align: left !important;
+  cursor: text !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow: hidden !important;
+  resize: none !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  float: none !important;
+  clear: both !important;
 }
 
 .prompt-input {
@@ -251,11 +430,21 @@ body::-webkit-scrollbar-thumb {
 }
 
 .prompt-item .tag {
-  font-size: 11px;
-  padding: 2px 6px;
+  display: inline-block;
   background: var(--border-color);
-  border-radius: 4px;
   color: var(--text-color);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.prompt-item .tag:hover {
+  background: var(--btn-hover-bg);
+  transform: translateY(-1px);
 }
 
 .prompt-item p {
@@ -553,30 +742,38 @@ body::-webkit-scrollbar-thumb {
   min-height: 42px;
 }
 
-.tag {
+.tags-input .tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: var(--border-color);
-  border-radius: 4px;
+  background: #e1e1e1;
+  color: #333;
+  padding: 2px 8px;
+  border-radius: 12px;
   font-size: 12px;
-  color: var(--text-color);
+  margin: 2px;
+  user-select: none;
 }
 
-.tag-remove {
+.tags-input .tag-remove {
   cursor: pointer;
   border: none;
   background: none;
   color: var(--text-color);
-  padding: 0;
+  padding: 0 0 0 4px;
   font-size: 14px;
   line-height: 1;
   opacity: 0.7;
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 0.7 !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  pointer-events: auto !important;
 }
 
-.tag-remove:hover {
-  opacity: 1;
+.tags-input .tag-remove:hover {
+  opacity: 1 !important;
 }
 
 .tags-input input {
@@ -590,10 +787,113 @@ body::-webkit-scrollbar-thumb {
   flex: 1;
 }
 
-.tags-input:focus-within {
-  border-color: var(--link-color);
-  box-shadow: 0 0 0 3px var(--focus-shadow-color);
-  outline: none;
+/* Hide tag remove buttons everywhere except in edit modals */
+.tag-remove,
+.tag button,
+.tag::after,
+.tag::before,
+.tag > *:not(text),
+button.tag-remove,
+.tag > button,
+.tag > .tag-remove,
+.prompt-item .tag .tag-remove,
+.prompt-item .tag button,
+.prompt-item .tag::after,
+.prompt-item .tag::before,
+.prompt-item .tag > *:not(text),
+.favorite-item .tag .tag-remove,
+.favorite-item .tag button,
+.favorite-item .tag::after,
+.favorite-item .tag::before,
+.favorite-item .tag > *:not(text),
+.prompt-tags .tag .tag-remove,
+.prompt-tags .tag button,
+.prompt-tags .tag::after,
+.prompt-tags .tag::before,
+.prompt-tags .tag > *:not(text) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: none !important;
+  position: static !important;
+  float: none !important;
+  clear: both !important;
+}
+
+/* Show tag remove buttons only in edit modals */
+#editModal .tags-input .tag-remove,
+#editFavoriteModal .tags-input .tag-remove,
+#addPromptModal .tags-input .tag-remove {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 0.7 !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 0 0 4px !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: auto !important;
+  position: static !important;
+  float: none !important;
+  clear: none !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  color: var(--text-color) !important;
+  background: none !important;
+}
+
+/* Dark theme specific styles for tag remove buttons */
+/* Removed duplicate dark theme styles */
+
+/* Ensure search input remains a simple text field */
+.search-input,
+#promptSearchInput,
+#favoritesSearchInput,
+#notesSearchInput {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 100% !important;
+  height: auto !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px !important;
+  background: var(--btn-bg) !important;
+  color: var(--text-color) !important;
+  font-size: 14px !important;
+  line-height: normal !important;
+  box-sizing: border-box !important;
+  appearance: textfield !important;
+  -webkit-appearance: textfield !important;
+  -moz-appearance: textfield !important;
+  text-align: left !important;
+  cursor: text !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow: hidden !important;
+  resize: none !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  float: none !important;
+  clear: both !important;
+}
+
+/* Prevent any tag-like elements in search inputs */
+.search-input *,
+#promptSearchInput *,
+#favoritesSearchInput *,
+#notesSearchInput * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* Notification styles */
@@ -665,7 +965,8 @@ body::-webkit-scrollbar-thumb {
   text-decoration: underline;
 }
 
-[data-theme="dark"] .favorite-title:hover {
+[data-theme="dark"] .favorite-title:hover,
+.deepseek-extension-root[data-theme="dark"] .favorite-title:hover {
   color: var(--link-color-dark);
 }
 
@@ -727,6 +1028,16 @@ body::-webkit-scrollbar-thumb {
 /* Favorites styles */
 .favorites-list {
   margin-top: 16px;
+  padding: 10px;
+}
+
+.pinned-favorites-container {
+  margin-bottom: 26px;  /* Отступ между группами избранных чатов */
+  padding-bottom: 0;
+}
+
+.unpinned-favorites-container {
+  padding-top: 0;
 }
 
 .favorite-item {
@@ -742,10 +1053,20 @@ body::-webkit-scrollbar-thumb {
   cursor: pointer;
 }
 
-.favorite-item:hover {
-  border-color: var(--link-color);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px var(--modal-shadow-color);
+.favorite-item:last-child {
+  margin-bottom: 0;
+}
+
+.favorite-item.pinned {
+  border-left: 3px solid var(--link-color);
+  background: linear-gradient(to right, rgba(13, 110, 253, 0.03), var(--bg-color) 50%);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+}
+
+[data-theme="dark"] .favorite-item.pinned,
+.deepseek-extension-root[data-theme="dark"] .favorite-item.pinned {
+  background: linear-gradient(to right, rgba(110, 168, 254, 0.05), var(--bg-color) 50%);
+  border-left-color: var(--link-color-dark);
 }
 
 .favorite-item-title {
@@ -834,7 +1155,8 @@ body::-webkit-scrollbar-thumb {
   z-index: 1000;
 }
 
-[data-theme="dark"] .floating-button {
+[data-theme="dark"] .floating-button,
+.deepseek-extension-root[data-theme="dark"] .floating-button {
   background-color: var(--primary-color);
   color: white;
   border: none;
@@ -846,7 +1168,8 @@ body::-webkit-scrollbar-thumb {
   background-color: var(--btn-hover-bg);
 }
 
-[data-theme="dark"] .floating-button:hover {
+[data-theme="dark"] .floating-button:hover,
+.deepseek-extension-root[data-theme="dark"] .floating-button:hover {
   background-color: var(--primary-color-dark);
 }
 
@@ -871,11 +1194,15 @@ body::-webkit-scrollbar-thumb {
   text-decoration: underline;
 }
 
-[data-theme="dark"] .favorite-link {
+/* Removed duplicate dark theme styles */
+
+[data-theme="dark"] .favorite-link,
+.deepseek-extension-root[data-theme="dark"] .favorite-link {
   color: var(--description-color);
 }
 
-[data-theme="dark"] .favorite-link:hover {
+[data-theme="dark"] .favorite-link:hover,
+.deepseek-extension-root[data-theme="dark"] .favorite-link:hover {
   color: var(--link-color-dark);
 }
 
@@ -916,19 +1243,59 @@ body::-webkit-scrollbar-thumb {
   font-size: 13px;
 }
 
+.pinned-prompts-container {
+  margin-bottom: 26px;  /* Отступ между группами промптов */
+  padding-bottom: 0;
+}
+
 .prompt-item.pinned {
   border-left: 3px solid var(--accent-color);
   background-color: var(--hover-color);
   position: relative;
+  cursor: move;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease;
+  will-change: transform, box-shadow, opacity;
 }
 
 .prompt-item.pinned::before {
-  content: '📌';
+  content: '';
+  width: 15px;
+  background: var(--accent-color);
+  opacity: 0.7;
   position: absolute;
-  top: 8px;
-  right: 8px;
-  font-size: 14px;
-  opacity: 0.5;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  cursor: move;
+  transition: opacity 0.2s ease;
+}
+
+.prompt-item.pinned::before:hover {
+  opacity: 1;
+}
+
+.prompt-item.pinned.dragging {
+  opacity: 0.7;
+  transform: scale(1.02) rotate(1deg);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+  z-index: 1000;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.15s ease;
+}
+
+.prompt-item.pinned:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.prompt-item.pinned.drag-over {
+  transform: translateY(10px);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Chat history styles */
@@ -954,7 +1321,7 @@ body::-webkit-scrollbar-thumb {
   transform: translateY(-1px);
 }
 
-.chat-message.user {
+.chat-message[data-source="deepseek"].user {
   margin-right: 8%;
   margin-left: 2%;
   background: #f0f7ff;
@@ -962,7 +1329,7 @@ body::-webkit-scrollbar-thumb {
   border-left: 4px solid #0d6efd;
 }
 
-.chat-message.assistant {
+.chat-message[data-source="deepseek"].assistant {
   margin-left: 8%;
   margin-right: 2%;
   background: #f8f9fa;
@@ -970,12 +1337,16 @@ body::-webkit-scrollbar-thumb {
   border-left: 4px solid #198754;
 }
 
-[data-theme="dark"] .chat-message.user {
+/* Removed duplicate dark theme styles */
+
+[data-theme="dark"] .chat-message[data-source="deepseek"].user,
+.deepseek-extension-root[data-theme="dark"] .chat-message[data-source="deepseek"].user {
   background: #1a2634;
   border-color: #0d6efd;
 }
 
-[data-theme="dark"] .chat-message.assistant {
+[data-theme="dark"] .chat-message[data-source="deepseek"].assistant,
+.deepseek-extension-root[data-theme="dark"] .chat-message[data-source="deepseek"].assistant {
   background: #1e2429;
   border-color: #198754;
 }
@@ -1001,7 +1372,7 @@ body::-webkit-scrollbar-thumb {
   overflow-wrap: break-word;
   color: var(--text-color);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.3;
   padding: 0;
   max-width: 100%;
 }
@@ -1019,7 +1390,10 @@ body::-webkit-scrollbar-thumb {
   white-space: pre-wrap;
 }
 
-[data-theme="dark"] .message-content pre {
+/* Removed duplicate dark theme styles */
+
+[data-theme="dark"] .message-content pre,
+.deepseek-extension-root[data-theme="dark"] .message-content pre {
   background: #2d333b;
   border-color: #444c56;
   color: #adbac7;
@@ -1043,7 +1417,10 @@ body::-webkit-scrollbar-thumb {
   word-break: break-all;
 }
 
-[data-theme="dark"] .message-content code.inline-code {
+/* Removed duplicate dark theme styles */
+
+[data-theme="dark"] .message-content code.inline-code,
+.deepseek-extension-root[data-theme="dark"] .message-content code.inline-code {
   background: #2d333b;
   border-color: #444c56;
   color: #ff7b72;
@@ -1051,10 +1428,8 @@ body::-webkit-scrollbar-thumb {
 
 /* Стили для HTML-контента в сообщениях */
 .message-content p {
-  margin: 0 0 1em 0;
-  line-height: 1.6;
-  color: var(--text-color);
-  font-size: 13px;
+  margin: 0 0 2px 0;
+  line-height: 1.3;
 }
 
 .message-content p:last-child {
@@ -1063,9 +1438,8 @@ body::-webkit-scrollbar-thumb {
 
 .message-content ul, 
 .message-content ol {
-  margin: 1.2em 0;
-  padding-left: 2em;
-  list-style-position: outside;
+  margin: 0;
+  padding-left: 16px;
 }
 
 .message-content ul {
@@ -1074,7 +1448,7 @@ body::-webkit-scrollbar-thumb {
 
 .message-content ul ul {
   list-style-type: circle;
-  margin: 0.5em 0;
+  margin: 0;
 }
 
 .message-content ul ul ul {
@@ -1087,7 +1461,7 @@ body::-webkit-scrollbar-thumb {
 
 .message-content ol ol {
   list-style-type: lower-alpha;
-  margin: 0.5em 0;
+  margin: 0;
 }
 
 .message-content ol ol ol {
@@ -1095,13 +1469,14 @@ body::-webkit-scrollbar-thumb {
 }
 
 .message-content li {
-  margin: 0.5em 0;
-  line-height: 1.7;
-  padding-left: 0.5em;
+  margin: 0;
+  padding: 0;
+  line-height: 1.1;
 }
 
 .message-content li > p {
-  margin: 0.5em 0;
+  margin: 0;
+  padding: 0;
 }
 
 .message-content li:first-child {
@@ -1117,11 +1492,9 @@ body::-webkit-scrollbar-thumb {
 .message-content h2, 
 .message-content h3, 
 .message-content h4 {
-  margin: 1.5em 0 0.8em 0;
+  margin: 4px 0 2px 0;
   font-weight: 600;
-  line-height: 1.3;
-  color: var(--text-color);
-  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .message-content h1:first-child,
@@ -1132,19 +1505,22 @@ body::-webkit-scrollbar-thumb {
 }
 
 .message-content h1 { 
-  font-size: 1.6em; 
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.3em;
+  font-size: 1.6em;
+  padding-bottom: 2px;
 }
 
 .message-content h2 { 
   font-size: 1.4em;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.3em;
+  padding-bottom: 2px;
 }
 
-.message-content h3 { font-size: 1.25em; }
-.message-content h4 { font-size: 1.15em; }
+.message-content h3 { 
+  font-size: 1.25em;
+}
+
+.message-content h4 { 
+  font-size: 1.15em;
+}
 
 /* Блоки кода и цитаты */
 .message-content blockquote {
@@ -1231,7 +1607,8 @@ body::-webkit-scrollbar-thumb {
   background-color: rgba(0, 0, 0, 0.02);
 }
 
-[data-theme="dark"] .message-content tr:nth-child(even) {
+[data-theme="dark"] .message-content tr:nth-child(even),
+.deepseek-extension-root[data-theme="dark"] .message-content tr:nth-child(even) {
   background-color: rgba(255, 255, 255, 0.02);
 }
 
@@ -1265,11 +1642,13 @@ body::-webkit-scrollbar-thumb {
   color: #0a58ca;
 }
 
-[data-theme="dark"] .message-content a {
+[data-theme="dark"] .message-content a,
+.deepseek-extension-root[data-theme="dark"] .message-content a {
   color: #6ea8fe;
 }
 
-[data-theme="dark"] .message-content a:hover {
+[data-theme="dark"] .message-content a:hover,
+.deepseek-extension-root[data-theme="dark"] .message-content a:hover {
   color: #9ec5fe;
 }
 
@@ -1324,54 +1703,850 @@ body::-webkit-scrollbar-thumb {
 
 /* Notification Styles */
 .deepseek-notification {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 12px 20px;
-  border-radius: 8px;
-  font-size: 16px;
-  z-index: 2147483647;
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  width: 225px;
-  box-sizing: border-box;
-  pointer-events: none;
-  text-align: left;
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  padding: 12px 20px !important;
+  border-radius: 8px !important;
+  font-size: 16px !important;
+  z-index: 2147483647 !important;
+  opacity: 0 !important;
+  transform: translateY(10px) !important;
+  transition: opacity 0.3s ease, transform 0.3s ease !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  width: 225px !important;
+  box-sizing: border-box !important;
+  pointer-events: auto !important;
+  text-align: left !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  visibility: visible !important;
+  display: block !important;
 }
 
 .deepseek-notification.success {
-  background: rgba(25, 135, 84, 0.95);
-  color: white;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(25, 135, 84, 0.95) !important;
+  color: white !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .deepseek-notification.error {
-  background: rgba(220, 53, 69, 0.95);
-  color: white;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(220, 53, 69, 0.95) !important;
+  color: white !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .deepseek-notification.show {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  visibility: visible !important;
+  display: block !important;
+}
+
+.deepseek-notification .title {
+  font-weight: 600 !important;
+  font-size: 16px !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.deepseek-notification .description {
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  margin: 4px 0 0 0 !important;
+  padding: 0 !important;
+}
+
+/* Notes styles */
+.notes-list {
+  padding: 10px;
+}
+
+.pinned-notes-container {
+  margin-bottom: 26px;  /* Уменьшаем отступ после группы прикрепленных заметок */
+  padding-bottom: 0;  /* Убираем дополнительный отступ внизу */
+}
+
+.unpinned-notes-container {
+  padding-top: 0;  /* Убираем дополнительный отступ сверху */
+}
+
+.note-card {
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 15px 15px 15px 25px;
+  margin-bottom: 12px;
+  transition: all 0.3s ease;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 0.3s ease forwards;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  position: relative;
+  overflow: hidden;
+  cursor: default;
+}
+
+.note-card:last-child {
+  margin-bottom: 0;
+}
+
+.note-card.pinned {
+  border-left: none;
+  background: linear-gradient(to right, rgba(13, 110, 253, 0.03), var(--bg-color) 50%);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+  user-select: none;
+  cursor: default;
+  padding-left: 25px;
+  position: relative;
+}
+
+.note-card.pinned::before {
+  content: '';
+  width: 15px;
+  background: var(--link-color);
+  opacity: 0.7;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  cursor: move;
+  transition: opacity 0.2s ease;
+}
+
+.note-card.pinned::before:hover {
+  opacity: 1;
+}
+
+.note-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.note-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.note-card-actions button {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+  border-radius: 4px;
+}
+
+.note-card-actions button:hover {
+  opacity: 1;
+  background: var(--hover-bg);
+}
+
+.note-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.note-card.removing {
+  animation: fadeOutDown 0.3s ease forwards;
+}
+
+.note-card-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-color);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.note-card-date {
+  font-size: 12px;
+  color: var(--description-color);
+  display: block;
+  margin: 8px 0;
+}
+
+.note-card-content {
+  color: var(--text-color);
+  line-height: 1.1;
+  margin: 0 0 8px;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.note-card-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: all 0.2s ease;
+}
+
+.note-card:hover .note-card-actions {
   opacity: 1;
   transform: translateY(0);
 }
 
-.deepseek-notification .title {
-  font-weight: 600;
-  font-size: 16px;
-  line-height: 1.4;
-  margin-bottom: 4px;
+.note-card-actions button {
+  padding: 4px 8px;
+  font-size: 13px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--description-color);
+  transition: color 0.2s ease;
 }
 
-.deepseek-notification .description {
+.note-card-actions button:hover {
+  color: var(--text-color);
+}
+
+.note-content-input {
+  width: 100%;
+  min-height: 300px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-color);
   font-size: 14px;
-  line-height: 1.4;
-  opacity: 0.9;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
+  transition: all 0.3s ease;
+}
+
+.note-content-input:focus {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px var(--focus-shadow-color);
+  outline: none;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Make sure floating buttons don't overlap */
+#addPromptButton {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+#noteModal .modal {
+  max-width: 600px;
+  height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#noteModal .modal-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#noteModal .modal-body {
+  flex: 1;
+  padding: 0;
+  display: flex;
+  margin-bottom: 20px;
+}
+
+#noteModal .note-content-input {
+  width: 100%;
+  height: calc(100% - 20px);
+  padding: 5px 20px;
+  border: none;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-color);
+  background: var(--bg-color);
+  outline: none;
+}
+
+#noteModal .note-content-input::placeholder {
+  color: var(--text-color-secondary);
+  opacity: 0.6;
+}
+
+#noteModal .modal-close {
+  padding: 5px 10px;
+  font-size: 24px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+#noteModal .modal-close:hover {
+  opacity: 1;
+}
+
+/* View Note Modal styles */
+#viewNoteModal .modal {
+  max-width: 800px;
+  min-height: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#viewNoteModal .modal-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+#viewNoteModal .modal-body {
+  padding: 5px 20px;
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+.note-content-view {
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--text-color);
+  overflow-wrap: break-word;
+  word-wrap: break-word;
   word-break: break-word;
+}
+
+/* Add scrollbar styling for the modal body */
+#viewNoteModal .modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+#viewNoteModal .modal-body::-webkit-scrollbar-track {
+  background: var(--bg-color);
+  border-radius: 4px;
+}
+
+#viewNoteModal .modal-body::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+
+#viewNoteModal .modal-body::-webkit-scrollbar-thumb:hover {
+  background-color: var(--btn-hover-border);
+}
+
+/* Headers */
+.note-content-view h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 1px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.note-content-view h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 6px 0 0;
+  line-height: 1.0;
+}
+
+.note-content-view h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 2px 0 0;
+  line-height: 1.0;
+}
+
+/* Lists */
+.note-content-view ul,
+.note-content-view ol {
+  margin: 0 0 0.8em 0;
+  padding-left: 20px;
+}
+
+.note-content-view ul {
+  list-style-type: disc;
+}
+
+.note-content-view ul ul {
+  list-style-type: circle;
+  margin: 2px 0 0;
+}
+
+.note-content-view ul ul ul {
+  list-style-type: square;
+}
+
+.note-content-view ol {
+  list-style-type: decimal;
+}
+
+.note-content-view ol ol {
+  list-style-type: lower-alpha;
+  margin: 0;
+}
+
+.note-content-view ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.note-content-view li {
+  margin: 0;
+  padding: 0;
+  line-height: 1.1;
+}
+
+.note-content-view li:last-child {
+  margin-bottom: 0;
+}
+
+.note-content-view li > p {
+  margin: 0;
+  padding: 0;
+  line-height: 1.1;
+}
+
+/* Text formatting */
+.note-content-view strong {
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.note-content-view em {
+  font-style: italic;
+}
+
+.note-content-view a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+.note-content-view a:hover {
+  text-decoration: underline;
+}
+
+.modal-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.edit-note-btn {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--description-color);
+  transition: color 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.edit-note-btn:hover {
+  color: var(--text-color);
+}
+
+#viewNoteModal .modal-title {
+  margin: 0;
+  font-size: 20px;
+  color: var(--text-color);
+}
+
+.note-card-content h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 1px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.note-card-content h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 4px 0 0;
+  line-height: 1.0;
+}
+
+.note-card-content h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 2px 0 0;
+  line-height: 1.4;
+}
+
+.note-content-view p {
+  margin: 0 0 0.8em 0;
+  padding: 0;
+  line-height: 1.4;
+}
+
+.note-content-view p:last-child {
+  margin-bottom: 0;
+}
+
+.note-content-view ul,
+.note-content-view ol {
+  margin: 0 0 0.8em 0;
+  padding-left: 20px;
+}
+
+.note-content-view ul ul,
+.note-content-view ol ol,
+.note-content-view ul ol,
+.note-content-view ol ul {
+  margin: 0.2em 0 0.2em 0;
+}
+
+.note-content-view li {
+  margin: 0;
+  padding: 0;
+  line-height: 1.1;
+}
+
+.note-content-view li > p {
+  margin: 0;
+  padding: 0;
+  line-height: 1.1;
+}
+
+.note-content-view li:last-child {
+  margin-bottom: 0;
+}
+
+#noteModal .modal-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#noteModal .modal-title-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+#noteModal .view-note-btn {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--description-color);
+  transition: color 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+#noteModal .view-note-btn:hover {
+  color: var(--text-color);
+}
+
+#noteModal .modal-close {
+  padding: 5px 10px;
+  font-size: 24px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+#noteModal .modal-title {
+  margin: 0;
+  font-size: 20px;
+  color: var(--text-color);
+}
+
+/* Prompts styles */
+.prompts-list {
+  margin-top: 16px;
+  padding: 10px;
+}
+
+.pinned-prompts-container {
+  margin-bottom: 26px;  /* Отступ между группами промптов */
+  padding-bottom: 0;
+}
+
+.unpinned-prompts-container {
+  padding-top: 0;
+}
+
+/* Base styles for tags */
+.prompt-item .tag,
+.favorite-item .tag {
+  display: inline-block;
+  background: var(--border-color);
+  color: var(--text-color);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+/* Hide ALL tag remove buttons by default */
+.tag-remove,
+.tag button,
+.tag::after,
+.tag::before,
+.tag > *:not(text),
+button.tag-remove,
+.tag > button,
+.tag > .tag-remove,
+.prompt-item .tag .tag-remove,
+.prompt-item .tag button,
+.prompt-item .tag::after,
+.prompt-item .tag::before,
+.prompt-item .tag > *:not(text),
+.favorite-item .tag .tag-remove,
+.favorite-item .tag button,
+.favorite-item .tag::after,
+.favorite-item .tag::before,
+.favorite-item .tag > *:not(text),
+.prompt-tags .tag .tag-remove,
+.prompt-tags .tag button,
+.prompt-tags .tag::after,
+.prompt-tags .tag::before,
+.prompt-tags .tag > *:not(text),
+/* Add specific rules for search input tags */
+.search-input .tag .tag-remove,
+.search-input .tag button,
+.search-input .tag::after,
+.search-input .tag::before,
+.search-input .tag > *:not(text),
+#promptSearchInput .tag .tag-remove,
+#promptSearchInput .tag button,
+#promptSearchInput .tag::after,
+#promptSearchInput .tag::before,
+#promptSearchInput .tag > *:not(text),
+#favoritesSearchInput .tag .tag-remove,
+#favoritesSearchInput .tag button,
+#favoritesSearchInput .tag::after,
+#favoritesSearchInput .tag::before,
+#favoritesSearchInput .tag > *:not(text) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: none !important;
+  position: static !important;
+  float: none !important;
+  clear: both !important;
+}
+
+/* Show tag remove buttons ONLY in edit modals */
+#editModal .tags-input .tag-remove,
+#editFavoriteModal .tags-input .tag-remove,
+#addPromptModal .tags-input .tag-remove {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 0.7 !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 0 0 4px !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: auto !important;
+  position: static !important;
+  float: none !important;
+  clear: none !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  color: var(--text-color) !important;
+  background: none !important;
+}
+
+/* Dark theme specific styles for tag remove buttons */
+/* Removed duplicate dark theme styles */
+
+.deepseek-extension-root[data-theme="dark"] #editModal .tags-input .tag-remove:hover,
+.deepseek-extension-root[data-theme="dark"] #editFavoriteModal .tags-input .tag-remove:hover,
+.deepseek-extension-root[data-theme="dark"] #addPromptModal .tags-input .tag-remove:hover,
+/* Removed duplicate dark theme styles */
+
+/* Additional specific rules for search inputs to ensure no tag buttons */
+.search-input .tag,
+#promptSearchInput .tag,
+#favoritesSearchInput .tag {
+  display: inline-block !important;
+  background: var(--border-color) !important;
+  color: var(--text-color) !important;
+  padding: 2px 8px !important;
+  border-radius: 12px !important;
+  font-size: 12px !important;
+  margin: 2px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Ensure no buttons or remove elements in search input tags */
+.search-input .tag *,
+#promptSearchInput .tag *,
+#favoritesSearchInput .tag * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Google AI Studio chat styles */
+.chat-message[data-source="google-ai"].user {
+  margin-right: 8%;
+  margin-left: 2%;
+  background: #f0f7ff;
+  border: 1px solid #cce5ff;
+  border-left: 4px solid #4285f4;
+}
+
+.chat-message[data-source="google-ai"].assistant {
+  margin-left: 8%;
+  margin-right: 2%;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-left: 4px solid #34a853;
+}
+
+/* Removed duplicate dark theme styles */
+
+[data-theme="dark"] .chat-message[data-source="google-ai"].user,
+.deepseek-extension-root[data-theme="dark"] .chat-message[data-source="google-ai"].user {
+  background: #1a2634;
+  border-color: #4285f4;
+}
+
+[data-theme="dark"] .chat-message[data-source="google-ai"].assistant,
+.deepseek-extension-root[data-theme="dark"] .chat-message[data-source="google-ai"].assistant {
+  background: #1e2429;
+  border-color: #34a853;
+}
+
+/* Source indicator in chat history */
+.chat-source-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.chat-source-indicator.deepseek {
+  background: rgba(13, 110, 253, 0.1);
+  color: #0d6efd;
+}
+
+.chat-source-indicator.google-ai {
+  background: rgba(66, 133, 244, 0.1);
+  color: #4285f4;
+}
+
+/* Removed duplicate dark theme styles */
+
+[data-theme="dark"] .chat-source-indicator.deepseek {
+  background: rgba(13, 110, 253, 0.2);
+}
+
+[data-theme="dark"] .chat-source-indicator.google-ai {
+  background: rgba(66, 133, 244, 0.2);
+}
+
+/* Frequent tags container */
+.frequent-tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
+  padding: 0 4px;
+}
+
+.frequent-tags-container .tag {
+  display: inline-flex;
+  align-items: center;
+  background: var(--border-color);
+  color: var(--text-color);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.frequent-tags-container .tag:hover {
+  background: var(--btn-hover-bg);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.frequent-tags-container .tag.active {
+  background: var(--link-color);
+  color: white;
+}
+
+[data-theme="dark"] .frequent-tags-container .tag.active,
+.deepseek-extension-root[data-theme="dark"] .frequent-tags-container .tag.active {
+  background: var(--link-color-dark);
+}
+
+/* Empty state for frequent tags */
+.frequent-tags-container:empty {
+  display: none;
 } 
