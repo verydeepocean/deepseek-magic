@@ -143,9 +143,10 @@ function createFavoriteElement(favorite) {
   const description = document.createElement('p');
   description.className = 'favorite-description';
   if (favorite.description) {
-    description.textContent = favorite.description.length > 200 
+    const truncatedDescription = favorite.description.length > 200 
       ? favorite.description.substring(0, 200) + '...' 
       : favorite.description;
+    description.innerHTML = sanitizeAndRenderHTML(truncatedDescription);
   }
   
   const tags = document.createElement('div');
@@ -196,6 +197,18 @@ function createFavoriteElement(favorite) {
   pinBtn.onclick = async (e) => {
     e.stopPropagation();
     try {
+      // Check if we're trying to pin and if we've reached the limit
+      if (!favorite.pinned) {
+        const response = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+        if (response.status === 'ok') {
+          const pinnedCount = response.favorites.filter(f => f.pinned).length;
+          if (pinnedCount >= 5) {
+            showNotification('Maximum number of pinned items (5) reached! 📌', true);
+            return;
+          }
+        }
+      }
+
       const updatedFavorite = {
         ...favorite,
         pinned: !favorite.pinned,
@@ -645,7 +658,7 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
   // Create and append tag elements
   sortedTags.forEach(([tag, frequency]) => {
     const tagElement = document.createElement('span');
-    tagElement.className = 'tag';
+    tagElement.className = 'tag clickable';
     tagElement.textContent = tag;
     
     // Add click handler to filter by this tag
@@ -680,104 +693,145 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
 }
 
 // Load favorites
-async function loadFavorites(searchQuery = '', retryCount = 3) {
-  try {
-    let favoritesResponse = null;
-    let attempts = retryCount;
-    
-    while (attempts > 0) {
-      try {
-        favoritesResponse = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
-        
-        if (favoritesResponse && favoritesResponse.status === 'ok') {
-          break;
-        }
-        
-        console.log(`Attempt ${retryCount - attempts + 1} failed, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (error) {
-        console.log(`Attempt ${retryCount - attempts + 1} failed:`, error);
-        await new Promise(resolve => setTimeout(resolve, 500));
+async function getFavoritesWithRetry(retryCount) {
+  let attempts = retryCount;
+  
+  while (attempts > 0) {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+      
+      // Any response with favorites property is valid (even if empty)
+      if (response && response.favorites !== undefined) {
+        return {
+          status: 'ok',
+          favorites: Array.isArray(response.favorites) ? response.favorites : []
+        };
       }
-      attempts--;
+    } catch (error) {
+      console.debug(`Attempt ${retryCount - attempts + 1} failed:`, error);
     }
     
-    if (!favoritesResponse || favoritesResponse.status !== 'ok') {
-      throw new Error('Failed to load favorites after multiple attempts');
+    attempts--;
+    if (attempts > 0) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+  
+  // Return empty favorites array instead of throwing error
+  return {
+    status: 'ok',
+    favorites: []
+  };
+}
+
+async function loadFavorites(searchQuery = '', retryCount = 3) {
+  // Get both the tab and the list elements
+  const favoritesTab = document.getElementById('favorites-tab');
+  const favoritesList = document.getElementById('favoritesList');
+  
+  // Check if we're in the right context
+  if (!favoritesTab || !favoritesList) {
+    console.debug('Favorites elements not found - this is normal if not on the favorites tab');
+    return;
+  }
+  
+  // Clear the list without showing loading message
+  favoritesList.innerHTML = '';
+  
+  try {
+    // Get favorites - this will never throw now
+    const favoritesResponse = await getFavoritesWithRetry(retryCount);
+    const favorites = favoritesResponse.favorites;
+    
+    // Try to load tag frequencies, but don't fail if it doesn't work
+    try {
+      const tagFrequencies = await getCombinedTagFrequencies();
+      displayFrequentTags('favoriteFrequentTags', tagFrequencies, 'favoritesSearchInput', loadFavorites);
+    } catch (tagError) {
+      console.debug('Failed to load tag frequencies:', tagError);
     }
     
-    const favorites = favoritesResponse.favorites || [];
-    const favoritesList = document.getElementById('favoritesList');
-    favoritesList.innerHTML = '';
-
-    // Display frequent tags
-    const tagFrequencies = countTagFrequencies(favorites);
-    displayFrequentTags('favoriteFrequentTags', tagFrequencies, 'favoritesSearchInput', loadFavorites);
-
+    // Handle empty favorites case
     if (favorites.length === 0) {
       favoritesList.innerHTML = '<div class="no-items">No favorite chats yet</div>';
       return;
     }
     
-    // Enhanced filtering with individual words search
-    const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
-    const filteredFavorites = searchQuery
-      ? favorites.filter(f => {
-          // Check if all search words are found in any of the fields
-          return searchWords.every(word => {
-            return f.title?.toLowerCase().includes(word) ||
-                   f.url?.toLowerCase().includes(word) ||
-                   f.description?.toLowerCase().includes(word) ||
-                   (f.tags && f.tags.some(tag => tag.toLowerCase().includes(word))) ||
-                   // Search in chat history messages
-                   (f.messages && f.messages.some(message => 
-                     message.content?.toLowerCase().includes(word) || 
-                     message.html?.toLowerCase().includes(word)
-                   ));
-          });
-        })
-      : favorites;
-
+    // Filter favorites if search query exists
+    const filteredFavorites = filterFavoritesByQuery(favorites, searchQuery);
+    
+    // Handle no search results
     if (filteredFavorites.length === 0) {
       favoritesList.innerHTML = '<div class="no-items">No matches found</div>';
       return;
     }
-
-    // Create containers for pinned and unpinned favorites
-    const pinnedContainer = document.createElement('div');
-    pinnedContainer.className = 'pinned-favorites-container';
     
-    const unpinnedContainer = document.createElement('div');
-    unpinnedContainer.className = 'unpinned-favorites-container';
+    // Render favorites
+    renderFavorites(filteredFavorites, favoritesList);
     
-    // Sort favorites: pinned first, then by date
-    filteredFavorites
-      .sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        return new Date(b.date) - new Date(a.date);
-      })
-      .forEach(favorite => {
-        const element = createFavoriteElement(favorite);
-        if (favorite.pinned) {
-          pinnedContainer.appendChild(element);
-        } else {
-          unpinnedContainer.appendChild(element);
-        }
-      });
-
-    // Only append containers if they have favorites
-    if (pinnedContainer.children.length > 0) {
-      favoritesList.appendChild(pinnedContainer);
-    }
-    
-    if (unpinnedContainer.children.length > 0) {
-      favoritesList.appendChild(unpinnedContainer);
-    }
-
   } catch (error) {
-    console.error('Error loading favorites:', error);
-    showNotification('Error loading favorites! ❌', true);
+    // This should rarely happen now since getFavoritesWithRetry always returns a valid response
+    console.warn('Unexpected error loading favorites:', error);
+    favoritesList.innerHTML = '<div class="error-state">Could not load favorites</div>';
+  }
+}
+
+// Helper function to filter favorites by search query
+function filterFavoritesByQuery(favorites, searchQuery) {
+  if (!searchQuery) {
+    return favorites;
+  }
+  
+  const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
+  
+  return favorites.filter(f => {
+    // Check if all search words are found in any of the fields
+    return searchWords.every(word => {
+      return f.title?.toLowerCase().includes(word) ||
+             f.url?.toLowerCase().includes(word) ||
+             f.description?.toLowerCase().includes(word) ||
+             (f.tags && f.tags.some(tag => tag.toLowerCase().includes(word))) ||
+             // Search in chat history messages
+             (f.messages && f.messages.some(message => 
+               message.content?.toLowerCase().includes(word) || 
+               message.html?.toLowerCase().includes(word)
+             ));
+    });
+  });
+}
+
+// Helper function to render favorites
+function renderFavorites(favorites, container) {
+  // Create containers for pinned and unpinned favorites
+  const pinnedContainer = document.createElement('div');
+  pinnedContainer.className = 'pinned-favorites-container';
+  
+  const unpinnedContainer = document.createElement('div');
+  unpinnedContainer.className = 'unpinned-favorites-container';
+  
+  // Sort favorites: pinned first, then by date
+  favorites
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.date) - new Date(a.date);
+    })
+    .forEach(favorite => {
+      const element = createFavoriteElement(favorite);
+      if (favorite.pinned) {
+        pinnedContainer.appendChild(element);
+      } else {
+        unpinnedContainer.appendChild(element);
+      }
+    });
+
+  // Only append containers if they have favorites
+  if (pinnedContainer.children.length > 0) {
+    container.appendChild(pinnedContainer);
+  }
+  
+  if (unpinnedContainer.children.length > 0) {
+    container.appendChild(unpinnedContainer);
   }
 }
 
@@ -846,7 +900,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Received message in popup:', message.type);
   
   if (message.type === 'REFRESH_FAVORITES' || message.type === 'ADD_FAVORITE') {
-    loadFavorites();
+    // Only reload favorites if we're on the favorites tab
+    const favoritesTab = document.getElementById('favorites-tab');
+    if (favoritesTab && favoritesTab.classList.contains('active')) {
+      loadFavorites();
+    }
     return true;
   }
   
@@ -1231,6 +1289,18 @@ function createPromptElement(prompt) {
   pinBtn.onclick = async (e) => {
     e.stopPropagation();
     try {
+      // Check if we're trying to pin and if we've reached the limit
+      if (!prompt.pinned) {
+        const response = await chrome.runtime.sendMessage({ type: 'GET_PROMPTS' });
+        if (response.status === 'ok') {
+          const pinnedCount = response.prompts.filter(p => p.pinned).length;
+          if (pinnedCount >= 5) {
+            showNotification('Maximum number of pinned items (5) reached! 📌', true);
+            return;
+          }
+        }
+      }
+
       const updatedPrompt = {
         ...prompt,
         pinned: !prompt.pinned,
@@ -1342,8 +1412,8 @@ async function loadPrompts(searchQuery = '', retryCount = 3) {
     const promptsList = document.getElementById('promptsList');
     promptsList.innerHTML = '';
 
-    // Display frequent tags
-    const tagFrequencies = countTagFrequencies(prompts);
+    // Display frequent tags using only prompts frequencies
+    const tagFrequencies = await getCombinedTagFrequencies('prompts');
     displayFrequentTags('promptFrequentTags', tagFrequencies, 'promptSearchInput', loadPrompts);
 
     if (prompts.length === 0) {
@@ -1601,7 +1671,14 @@ async function clearAllData() {
 // Initialize
 async function initialize() {
   console.log('Initializing popup...');
-  
+
+  // Проверяем наличие отложенного импорта
+  try {
+    await dataExporter.handlePendingImport();
+  } catch (error) {
+    console.error('Error handling pending import:', error);
+  }
+
   // Initialize theme - apply it immediately to prevent flash of unthemed content
   const savedTheme = localStorage.getItem('theme') || 'light';
   document.documentElement.setAttribute('data-theme', savedTheme);
@@ -1614,6 +1691,17 @@ async function initialize() {
 
   // Load favorites since we start on Favorites tab
   loadFavorites();
+  
+  // Initialize tag displays with combined frequencies
+  await refreshTagDisplays();
+
+  // Initialize settings
+  await initSettingsModal();
+  
+  // Setup settings button
+  document.getElementById('openSettingsBtn').addEventListener('click', () => {
+    showModal('settingsModal');
+  });
 
   // Hide Add Note and Add Prompt buttons by default since we start on Favorites tab
   const addNoteButton = document.getElementById('addNoteButton');
@@ -1699,27 +1787,69 @@ async function initialize() {
   document.querySelector('.delete-btn')?.addEventListener('click', async () => {
     if (confirm('Are you sure you want to clear all data? This will delete all your Favorite Chats, Prompts and Notes.')) {
       try {
-        // Send message to background script to clear all data
-        const response = await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
+        showToast('Clearing data...', 'info');
         
-        if (response.status === 'error') {
-          throw new Error(response.error || 'Failed to clear data');
-        }
+        // Force UI refresh immediately
+        const promptsContainer = document.getElementById('prompts-tab');
+        const favoritesContainer = document.getElementById('favorites-tab');
+        const notesContainer = document.getElementById('notes-tab');
+        
+        // Clear containers with empty state messages
+        if (promptsContainer) promptsContainer.innerHTML = '<div class="empty-state">No prompts found</div>';
+        if (favoritesContainer) favoritesContainer.innerHTML = '<div class="empty-state">No favorites found</div>';
+        if (notesContainer) notesContainer.innerHTML = '<div class="empty-state">No notes found</div>';
+        
+        // Clear search inputs
+        const promptSearchInput = document.getElementById('promptSearchInput');
+        const favoritesSearchInput = document.getElementById('favoritesSearchInput');
+        const notesSearchInput = document.getElementById('notesSearchInput');
+        
+        if (promptSearchInput) promptSearchInput.value = '';
+        if (favoritesSearchInput) favoritesSearchInput.value = '';
+        if (notesSearchInput) notesSearchInput.value = '';
 
-        // Clear notes database separately since it's handled in popup
+        // Clear all databases in sequence
+        console.log('Clearing prompts...');
+        await promptDB.clearAll();
+        
+        console.log('Clearing favorites...');
+        await favoritesDB.clearAll();
+        
+        console.log('Clearing notes...');
         await notesDB.clearAll();
-        
-        // Refresh all views
-        await Promise.all([
-          loadFavorites(),
-          loadPrompts(),
-          loadNotes()
-        ]);
 
-        showNotification('All data has been cleared successfully! 🗑️');
+        // Send message to background script
+        await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
+
+        // Get active tab
+        const activeTab = document.querySelector('.tab-btn.active');
+        const activeTabId = activeTab ? activeTab.dataset.tab : 'prompts';
+        
+        // Refresh tag displays
+        await refreshTagDisplays();
+
+        showToast('All data has been cleared successfully! 🗑️', 'success');
+        console.log('All data cleared successfully');
       } catch (error) {
         console.error('Error clearing data:', error);
-        showNotification('Error clearing data! ❌', true);
+        showToast(`Error clearing data: ${error.message}`, 'error');
+        
+        // Try to recover
+        try {
+          await initDatabases();
+          const activeTab = document.querySelector('.tab-btn.active');
+          const activeTabId = activeTab ? activeTab.dataset.tab : 'prompts';
+          
+          // Show empty states instead of trying to load data
+          const container = document.getElementById(`${activeTabId}-tab`);
+          if (container) {
+            container.innerHTML = `<div class="empty-state">No ${activeTabId} found</div>`;
+          }
+          
+          await refreshTagDisplays();
+        } catch (refreshError) {
+          console.error('Error refreshing views:', refreshError);
+        }
       }
     }
   });
@@ -2003,49 +2133,61 @@ let isSaving = false;
 
 async function loadNotes() {
   try {
-    const notes = await notesDB.getAllNotes();
-    const notesList = document.getElementById('notesList');
+    const notesList = document.getElementById('notes-tab');
+    if (!notesList) {
+      console.warn('Notes container not found');
+      return;
+    }
+
+    // Clear existing content
     notesList.innerHTML = '';
 
     // Create containers for pinned and unpinned notes
     const pinnedContainer = document.createElement('div');
-    pinnedContainer.className = 'pinned-notes-container';
+    pinnedContainer.className = 'pinned-notes';
     
     const unpinnedContainer = document.createElement('div');
-    unpinnedContainer.className = 'unpinned-notes-container';
+    unpinnedContainer.className = 'unpinned-notes';
 
-    // Sort notes: pinned first (by order), then by date
-    notes.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      if (a.pinned && b.pinned) {
-        // Если есть order, сортируем по нему
-        if (a.order !== undefined && b.order !== undefined) {
-          return a.order - b.order;
+    try {
+      const notes = await notesDB.getAllNotes();
+      
+      if (!notes || notes.length === 0) {
+        notesList.innerHTML = '<div class="empty-state">No notes found</div>';
+        return;
+      }
+
+      // Sort notes by date (newest first) and pinned status
+      notes.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.date) - new Date(a.date);
+      });
+
+      notes.forEach(note => {
+        const noteElement = createNoteCard(note);
+        if (note.pinned) {
+          pinnedContainer.appendChild(noteElement);
+        } else {
+          unpinnedContainer.appendChild(noteElement);
         }
-      }
-      return new Date(b.date) - new Date(a.date);
-    });
+      });
 
-    // Distribute notes to their respective containers
-    notes.forEach(note => {
-      const noteCard = createNoteCard(note);
-      if (note.pinned) {
-        pinnedContainer.appendChild(noteCard);
-      } else {
-        unpinnedContainer.appendChild(noteCard);
+      // Only append containers if they have content
+      if (pinnedContainer.children.length > 0) {
+        notesList.appendChild(pinnedContainer);
       }
-    });
+      
+      if (unpinnedContainer.children.length > 0) {
+        notesList.appendChild(unpinnedContainer);
+      }
 
-    // Only append containers if they have notes
-    if (pinnedContainer.children.length > 0) {
-      notesList.appendChild(pinnedContainer);
-    }
-    if (unpinnedContainer.children.length > 0) {
-      notesList.appendChild(unpinnedContainer);
+    } catch (error) {
+      console.error('Error loading notes:', error);
+      notesList.innerHTML = '<div class="error-state">Error loading notes. Please try again.</div>';
     }
   } catch (error) {
-    console.error('Error loading notes:', error);
+    console.error('Error in loadNotes:', error);
   }
 }
 
@@ -2588,3 +2730,1062 @@ async function saveNoteContent() {
     isSaving = false;
   }
 }
+
+// Settings management
+const DEFAULT_SETTINGS = {
+  provider: 'openrouter',
+  apiKeys: {
+    openrouter: '',
+    google: ''
+  },
+  model: '',
+  titlePrompt: 'Generate a concise and descriptive title for this content.',
+  summaryPrompt: 'Summarize the key points of this content in 2-3 sentences.',
+  tagsPrompt: 'Generate 3-5 relevant tags for this content, separated by commas.'
+};
+
+// Models available for each provider
+const PROVIDER_MODELS = {
+  openrouter: [
+    { id: 'google/gemini-2.0-flash-001', name: 'gemini-2.0-flash-001' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek-V3' },
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o mini' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'The Meta Llama 3.3' }
+  ],
+  google: [
+    { id: 'gemini-2.0-flash-001', name: 'gemini-2.0-flash' },
+    { id: 'gemini-2.0-pro-exp-02-05', name: 'gemini-2.0-pro' },
+    { id: 'gemini-2.0-flash-thinking-exp-01-21', name: 'gemini-2.0-flash-thinking-exp' },
+    { id: 'gemini-2.0-flash-exp', name: 'gemini-2.0-flash-exp' }
+  ]
+};
+
+// Load settings from storage
+async function loadSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get('settings', (result) => {
+      const settings = result.settings || DEFAULT_SETTINGS;
+      resolve(settings);
+    });
+  });
+}
+
+// Save settings to storage
+async function saveSettings(settings) {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ settings }, () => {
+      resolve();
+    });
+  });
+}
+
+// Toggle API key visibility with eye icon animation
+document.getElementById('toggleApiKeyVisibility').addEventListener('click', () => {
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const eyeIcon = document.querySelector('.eye-icon');
+  
+  if (apiKeyInput.type === 'password') {
+    apiKeyInput.type = 'text';
+    // Change to "eye-off" icon
+    eyeIcon.innerHTML = `
+      <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+    `;
+  } else {
+    apiKeyInput.type = 'password';
+    // Change back to "eye" icon
+    eyeIcon.innerHTML = `
+      <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+    `;
+  }
+});
+
+// Create a toast notification system
+function createToastSystem() {
+  // Create container if it doesn't exist
+  let toastContainer = document.getElementById('toast-container');
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    toastContainer.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      left: 70px; /* Adjusted for better centering */
+      transform: translateX(-50%);
+      z-index: 9999;
+      width: auto;
+      max-width: 90%;
+      pointer-events: none; /* Allow clicking through the container */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    `;
+    document.body.appendChild(toastContainer);
+  }
+  
+  return {
+    show: function(message, type = 'info', duration = 3000) {
+      return new Promise((resolve) => {
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `toast-notification ${type}`;
+        toast.textContent = message;
+        toast.style.cssText = `
+          margin-bottom: 10px;
+          opacity: 0;
+          transform: translateY(20px);
+          transition: all 0.3s ease;
+          pointer-events: auto;
+          text-align: center;
+          min-width: 200px;
+          max-width: 280px;
+          width: fit-content;
+          margin-left: auto;
+          margin-right: auto;
+        `;
+        
+        // Add to container
+        toastContainer.appendChild(toast);
+        
+        // Show with animation
+        setTimeout(() => {
+          toast.style.opacity = '1';
+          toast.style.transform = 'translateY(0)';
+        }, 10);
+        
+        // Auto hide after duration
+        const hideTimeout = setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateY(20px)';
+          
+          // Remove after animation completes
+          setTimeout(() => {
+            if (toast.parentNode) {
+              toastContainer.removeChild(toast);
+            }
+            resolve();
+          }, 300);
+        }, duration);
+        
+        // Store timeout for potential early cleanup
+        toast._hideTimeout = hideTimeout;
+      });
+    }
+  };
+}
+
+// Initialize toast system
+const toast = createToastSystem();
+
+// Check connection to API with improved UI feedback
+async function checkConnection(provider, apiKey) {
+  const testConnectionBtn = document.getElementById('testConnectionBtn');
+  
+  // Validate input
+  if (!apiKey || apiKey.trim() === '') {
+    await toast.show('Please enter an API key', 'error');
+    return false;
+  }
+  
+  // Disable button and show loading state
+  testConnectionBtn.disabled = true;
+  testConnectionBtn.classList.add('testing');
+  
+  // Show loading toast
+  const loadingToast = document.createElement('div');
+  loadingToast.className = 'toast-notification loading';
+  loadingToast.textContent = 'Connecting...';
+  loadingToast.style.marginBottom = '10px';
+  document.getElementById('toast-container').appendChild(loadingToast);
+  
+  // Animate in
+  setTimeout(() => {
+    loadingToast.style.opacity = '1';
+    loadingToast.style.transform = 'translateY(0)';
+  }, 10);
+  
+  try {
+    let isValid = false;
+    let responseData = null;
+    
+    if (provider === 'openrouter') {
+      try {
+        // First, validate the API key format
+        if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
+          throw new Error('Invalid OpenRouter API key format. Keys should start with "sk-"');
+        }
+        
+        // Test the connection to OpenRouter
+        const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || `API returned status ${response.status}`);
+        }
+        
+        responseData = await response.json();
+        isValid = true;
+      } catch (error) {
+        throw new Error(`OpenRouter connection failed: ${error.message}`);
+      }
+    } else if (provider === 'google') {
+      try {
+        // Validate Google AI API key format
+        if (!apiKey.startsWith('AIza') || apiKey.length < 30) {
+          throw new Error('Invalid Google AI API key format. Keys should start with "AIza"');
+        }
+        
+        // Test connection to Google AI API (Gemini)
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || `API returned status ${response.status}`);
+        }
+        
+        responseData = await response.json();
+        isValid = true;
+      } catch (error) {
+        throw new Error(`Google AI connection failed: ${error.message}`);
+      }
+    }
+    
+    // Remove loading toast
+    loadingToast.style.opacity = '0';
+    loadingToast.style.transform = 'translateY(20px)';
+    setTimeout(() => {
+      if (loadingToast.parentNode) {
+        document.getElementById('toast-container').removeChild(loadingToast);
+      }
+    }, 300);
+    
+    if (isValid) {
+      // Display success message with additional info if available
+      let successMessage = 'Connection successful!';
+      
+      if (provider === 'openrouter' && responseData?.data?.name) {
+        successMessage += ` Connected as: ${responseData.data.name}`;
+      } else if (provider === 'google' && responseData?.models?.length > 0) {
+        successMessage += ` Found ${responseData.models.length} available models`;
+      }
+      
+      await toast.show(successMessage, 'success');
+      return true;
+    } else {
+      await toast.show('Connection failed. Check your API key.', 'error');
+      return false;
+    }
+  } catch (error) {
+    // Remove loading toast
+    loadingToast.style.opacity = '0';
+    loadingToast.style.transform = 'translateY(20px)';
+    setTimeout(() => {
+      if (loadingToast.parentNode) {
+        document.getElementById('toast-container').removeChild(loadingToast);
+      }
+    }, 300);
+    
+    await toast.show(`Error: ${error.message}`, 'error');
+    console.error('Connection test error:', error);
+    return false;
+  } finally {
+    // Re-enable button and remove testing class
+    testConnectionBtn.disabled = false;
+    testConnectionBtn.classList.remove('testing');
+  }
+}
+
+// Function to show connection status with auto-hide
+function showConnectionStatus(message, type) {
+  return new Promise((resolve) => {
+    const connectionStatus = document.getElementById('connectionStatus');
+    
+    // Функция для сброса состояния
+    const resetStatus = () => {
+      connectionStatus.classList.remove('show');
+      connectionStatus._isResetting = true;
+      
+      setTimeout(() => {
+        if (connectionStatus._isResetting) {
+          connectionStatus.textContent = '';
+          connectionStatus.className = 'connection-status';
+          connectionStatus._isResetting = false;
+        }
+        resolve();
+      }, 300);
+    };
+    
+    // Очищаем все предыдущие состояния и таймеры
+    if (connectionStatus._hideTimeout) {
+      clearTimeout(connectionStatus._hideTimeout);
+      connectionStatus._hideTimeout = null;
+    }
+    
+    if (connectionStatus._hideAnimation) {
+      clearTimeout(connectionStatus._hideAnimation);
+      connectionStatus._hideAnimation = null;
+    }
+    
+    if (connectionStatus._showDelay) {
+      clearTimeout(connectionStatus._showDelay);
+      connectionStatus._showDelay = null;
+    }
+    
+    // Если элемент уже показывается, сначала скроем его
+    if (connectionStatus.classList.contains('show')) {
+      connectionStatus.classList.remove('show');
+      connectionStatus._hideAnimation = setTimeout(() => {
+        updateAndShowStatus();
+      }, 300);
+    } else {
+      updateAndShowStatus();
+    }
+    
+    function updateAndShowStatus() {
+      // Сбрасываем флаг сброса
+      connectionStatus._isResetting = false;
+      
+      // Обновляем статус
+      connectionStatus.textContent = message;
+      connectionStatus.className = 'connection-status';
+      if (type) {
+        connectionStatus.classList.add(type);
+      }
+      
+      // Показываем с небольшой задержкой
+      connectionStatus._showDelay = setTimeout(() => {
+        if (!connectionStatus._isResetting) {
+          connectionStatus.classList.add('show');
+          
+          // Автоматическое скрытие для success и error
+          if (type === 'success' || type === 'error') {
+            connectionStatus._hideTimeout = setTimeout(() => {
+              if (!connectionStatus._isResetting) {
+                resetStatus();
+              }
+            }, 3000);
+          } else {
+            resolve();
+          }
+        }
+      }, 50);
+    }
+  });
+}
+
+// Populate model select based on provider
+function populateModelSelect(provider) {
+  const modelSelect = document.getElementById('modelSelect');
+  modelSelect.innerHTML = '';
+  
+  PROVIDER_MODELS[provider].forEach(model => {
+    const option = document.createElement('option');
+    option.value = model.id;
+    option.textContent = model.name;
+    modelSelect.appendChild(option);
+  });
+}
+
+// Initialize settings modal
+async function initSettingsModal() {
+  const settings = await loadSettings();
+  const connectionStatus = document.getElementById('connectionStatus');
+  
+  // Set initial values
+  document.getElementById('providerSelect').value = settings.provider;
+  populateModelSelect(settings.provider);
+  document.getElementById('apiKeyInput').value = settings.apiKeys[settings.provider] || '';
+  document.getElementById('modelSelect').value = settings.model || PROVIDER_MODELS[settings.provider][0].id;
+  document.getElementById('titlePromptInput').value = settings.titlePrompt || DEFAULT_SETTINGS.titlePrompt;
+  document.getElementById('summaryPromptInput').value = settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt;
+  document.getElementById('tagsPromptInput').value = settings.tagsPrompt || DEFAULT_SETTINGS.tagsPrompt;
+  
+  // Setup AI description generation
+  document.getElementById('generateDescriptionBtn')?.addEventListener('click', async () => {
+    try {
+      if (!currentEditingFavorite) {
+        throw new Error('No favorite being edited');
+      }
+
+      const settings = await loadSettings();
+      if (!settings.apiKeys[settings.provider] || !settings.model) {
+        showNotification('Please configure API settings first! ⚙️', true);
+        return;
+      }
+
+      const generateBtn = document.getElementById('generateDescriptionBtn');
+      generateBtn.disabled = true;
+      generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 4V2C6.48 2 2 6.48 2 12h2c0-4.41 3.59-8 8-8zm6 2h-2c0 3.31-2.69 6-6 6s-6-2.69-6-6H4c0 4.41 3.59 8 8 8s8-3.59 8-8zm-6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>';
+
+      // Get chat history text
+      const chatHistory = currentEditingFavorite.messages
+        ?.map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n\n') || '';
+
+      if (!chatHistory) {
+        throw new Error('No chat history available');
+      }
+
+      // Prepare the prompt
+      const prompt = `${settings.summaryPrompt}\n\nChat History:\n${chatHistory}`;
+
+      // Call the AI API
+      const response = await chrome.runtime.sendMessage({
+        type: 'GENERATE_TEXT',
+        prompt: prompt,
+        provider: settings.provider,
+        model: settings.model,
+        apiKey: settings.apiKeys[settings.provider]
+      });
+
+      if (response.status === 'error') {
+        throw new Error(response.error);
+      }
+
+      // Update the description field
+      const descriptionInput = document.getElementById('editFavoriteDescription');
+      descriptionInput.value = response.text.trim();
+
+      showNotification('Description generated successfully! ✨');
+    } catch (error) {
+      console.error('Error generating description:', error);
+      showNotification(`Error generating description: ${error.message} ❌`, true);
+    } finally {
+      const generateBtn = document.getElementById('generateDescriptionBtn');
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
+    }
+  });
+  
+  // Clear connection status
+  connectionStatus.textContent = '';
+  connectionStatus.className = 'connection-status';
+  
+  // Show connection status if API key is present
+  const currentApiKey = settings.apiKeys[settings.provider];
+  if (currentApiKey && currentApiKey.trim() !== '') {
+    connectionStatus.textContent = 'API key saved. Click "Test Connection" to verify.';
+    connectionStatus.className = 'connection-status';
+  }
+  
+  // Create a debounced save function
+  const saveSettingsDebounced = debounce(async () => {
+    try {
+      const provider = document.getElementById('providerSelect').value;
+      const apiKey = document.getElementById('apiKeyInput').value;
+      const model = document.getElementById('modelSelect').value;
+      const titlePrompt = document.getElementById('titlePromptInput').value;
+      const summaryPrompt = document.getElementById('summaryPromptInput').value;
+      const tagsPrompt = document.getElementById('tagsPromptInput').value;
+      
+      // Update settings object
+      settings.provider = provider;
+      settings.apiKeys[provider] = apiKey;
+      settings.model = model;
+      settings.titlePrompt = titlePrompt;
+      settings.summaryPrompt = summaryPrompt;
+      settings.tagsPrompt = tagsPrompt;
+      
+      // Save to storage
+      await saveSettings(settings);
+      
+      // Show subtle notification
+      connectionStatus.textContent = 'Settings saved';
+      connectionStatus.className = 'connection-status success';
+      
+      // Clear the notification after 2 seconds
+      setTimeout(() => {
+        if (apiKey && apiKey.trim() !== '') {
+          connectionStatus.textContent = 'API key saved. Click "Test Connection" to verify.';
+          connectionStatus.className = 'connection-status';
+        } else {
+          connectionStatus.textContent = '';
+          connectionStatus.className = 'connection-status';
+        }
+      }, 2000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      
+      // Show error notification
+      connectionStatus.textContent = 'Error saving settings';
+      connectionStatus.className = 'connection-status error';
+    }
+  }, 1000);
+  
+  // Add auto-save to all input fields
+  document.getElementById('providerSelect').addEventListener('change', () => {
+    const provider = document.getElementById('providerSelect').value;
+    populateModelSelect(provider);
+    
+    // Update API key field with the saved key for the selected provider
+    const savedApiKey = settings.apiKeys[provider] || '';
+    document.getElementById('apiKeyInput').value = savedApiKey;
+    
+    // Update model selection
+    const savedModel = settings.model && PROVIDER_MODELS[provider].some(m => m.id === settings.model) 
+      ? settings.model 
+      : PROVIDER_MODELS[provider][0].id;
+    document.getElementById('modelSelect').value = savedModel;
+    
+    // Update connection status
+    if (savedApiKey && savedApiKey.trim() !== '') {
+      connectionStatus.textContent = 'API key saved. Click "Test Connection" to verify.';
+      connectionStatus.className = 'connection-status';
+    } else {
+      connectionStatus.textContent = '';
+      connectionStatus.className = 'connection-status';
+    }
+    
+    // Auto-save settings
+    saveSettingsDebounced();
+  });
+  
+  document.getElementById('modelSelect').addEventListener('change', saveSettingsDebounced);
+  document.getElementById('apiKeyInput').addEventListener('input', () => {
+    // Clear connection status when API key is changed
+    connectionStatus.textContent = 'Changes not saved yet';
+    connectionStatus.className = 'connection-status';
+    saveSettingsDebounced();
+  });
+  document.getElementById('titlePromptInput').addEventListener('input', saveSettingsDebounced);
+  document.getElementById('summaryPromptInput').addEventListener('input', saveSettingsDebounced);
+  document.getElementById('tagsPromptInput').addEventListener('input', saveSettingsDebounced);
+  
+  // Test connection button
+  document.getElementById('testConnectionBtn').addEventListener('click', async () => {
+    const provider = document.getElementById('providerSelect').value;
+    const apiKey = document.getElementById('apiKeyInput').value;
+    
+    // Save settings before testing connection
+    settings.provider = provider;
+    settings.apiKeys[provider] = apiKey;
+    await saveSettings(settings);
+    
+    // Test the connection
+    await checkConnection(provider, apiKey);
+  });
+  
+  // Toggle API key visibility with stored handler
+  const toggleHandler = () => {
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const eyeIcon = document.querySelector('.eye-icon');
+    
+    if (apiKeyInput.type === 'password') {
+      apiKeyInput.type = 'text';
+      // Change to "eye-off" icon
+      eyeIcon.innerHTML = `
+        <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+      `;
+    } else {
+      apiKeyInput.type = 'password';
+      // Change back to "eye" icon
+      eyeIcon.innerHTML = `
+        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+      `;
+    }
+  };
+  
+  const toggleBtn = document.getElementById('toggleApiKeyVisibility');
+  toggleBtn._toggleHandler = toggleHandler; // Store the handler
+  toggleBtn.addEventListener('click', toggleHandler);
+  
+  // Close button
+  document.getElementById('closeSettingsModal').addEventListener('click', () => {
+    hideModal('settingsModal');
+  });
+  
+  // Additional close button in footer
+  document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+    hideModal('settingsModal');
+  });
+  
+  // Close when clicking outside the modal
+  document.getElementById('settingsModal').addEventListener('click', (e) => {
+    if (e.target.id === 'settingsModal') {
+      hideModal('settingsModal');
+    }
+  });
+}
+
+// Function to get combined tag frequencies from both favorites and prompts
+async function getCombinedTagFrequencies(type = 'all') {
+  try {
+    let items = [];
+    
+    if (type === 'all' || type === 'favorites') {
+      const favoritesResponse = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+      if (favoritesResponse && favoritesResponse.status === 'ok') {
+        items = items.concat(favoritesResponse.favorites || []);
+      }
+    }
+    
+    if (type === 'all' || type === 'prompts') {
+      const promptsResponse = await chrome.runtime.sendMessage({ type: 'GET_PROMPTS' });
+      if (promptsResponse && promptsResponse.status === 'ok') {
+        items = items.concat(promptsResponse.prompts || []);
+      }
+    }
+    
+    return countTagFrequencies(items);
+  } catch (error) {
+    console.error('Error getting tag frequencies:', error);
+    return {};
+  }
+}
+
+// Function to refresh tag displays with the latest frequencies
+async function refreshTagDisplays() {
+  try {
+    // Get separate frequencies for favorites and prompts
+    const favoritesFrequencies = await getCombinedTagFrequencies('favorites');
+    const promptsFrequencies = await getCombinedTagFrequencies('prompts');
+    
+    // Update each tag container with its specific frequencies
+    displayFrequentTags('favoriteFrequentTags', favoritesFrequencies, 'favoritesSearchInput', loadFavorites);
+    displayFrequentTags('promptFrequentTags', promptsFrequencies, 'promptSearchInput', loadPrompts);
+  } catch (error) {
+    console.error('Error refreshing tag displays:', error);
+  }
+}
+
+// Remove any standalone toggle visibility event listener if it exists
+document.addEventListener('DOMContentLoaded', () => {
+  const toggleBtn = document.getElementById('toggleApiKeyVisibility');
+  if (toggleBtn) {
+    // Remove any existing handlers
+    const oldHandler = toggleBtn._toggleHandler;
+    if (oldHandler) {
+      toggleBtn.removeEventListener('click', oldHandler);
+    }
+    
+    // Add new handler
+    const toggleHandler = () => {
+      const apiKeyInput = document.getElementById('apiKeyInput');
+      const eyeIcon = toggleBtn.querySelector('.eye-icon');
+      
+      if (apiKeyInput.type === 'password') {
+        apiKeyInput.type = 'text';
+        eyeIcon.innerHTML = `
+          <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+        `;
+      } else {
+        apiKeyInput.type = 'password';
+        eyeIcon.innerHTML = `
+          <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+        `;
+      }
+    };
+    
+    // Store and add the new handler
+    toggleBtn._toggleHandler = toggleHandler;
+    toggleBtn.addEventListener('click', toggleHandler);
+  }
+});
+
+// Remove the standalone event listener
+const oldToggleListener = document.getElementById('toggleApiKeyVisibility')?.addEventListener;
+if (oldToggleListener) {
+  document.getElementById('toggleApiKeyVisibility').removeEventListener('click', oldToggleListener);
+}
+
+// Add near the beginning of the file, where other event listeners are initialized
+document.getElementById('exportDataBtn').addEventListener('click', handleExportData);
+document.getElementById('importDataBtn').addEventListener('click', handleImportData);
+
+// Add the handler functions
+async function handleExportData() {
+  try {
+    showToast('Preparing data for export...', 'info');
+    
+    // Убедимся, что dataExporter доступен
+    if (!window.dataExporter) {
+      console.error('dataExporter is not available');
+      showToast('Error: Export functionality is not available', 'error');
+      return;
+    }
+    
+    console.log('Starting export process...');
+    
+    // Инициализируем базы данных перед экспортом
+    try {
+      console.log('Initializing databases...');
+      await Promise.all([
+        promptDB.init(),
+        favoritesDB.init(),
+        notesDB.init()
+      ]);
+      console.log('Databases initialized successfully');
+    } catch (initError) {
+      console.error('Error initializing databases:', initError);
+      showToast('Error initializing databases. Please try again.', 'error');
+      return;
+    }
+    
+    // Получаем данные
+    showToast('Retrieving data...', 'info');
+    console.log('Getting export data...');
+    const data = await window.dataExporter.exportAllData();
+    
+    // Проверяем, что данные не пустые
+    const isEmpty = 
+      (!data.prompts || data.prompts.length === 0) && 
+      (!data.favorites || data.favorites.length === 0) && 
+      (!data.notes || data.notes.length === 0) &&
+      (!data.settings || Object.keys(data.settings).length === 0);
+    
+    if (isEmpty) {
+      console.warn('No data to export');
+      showToast('No data to export. Please add some content first.', 'error');
+      return;
+    }
+    
+    // Показываем статус экспорта
+    showToast('Creating export file...', 'info');
+    console.log('Creating export file with data:', {
+      promptsCount: data.prompts?.length || 0,
+      favoritesCount: data.favorites?.length || 0,
+      notesCount: data.notes?.length || 0,
+      settingsCount: Object.keys(data.settings || {}).length
+    });
+    
+    // Создаем файл
+    const exportData = JSON.stringify(data, null, 2);
+    const blob = new Blob([exportData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Создаем ссылку для скачивания
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `deepseek_magic_backup_${new Date().toISOString().split('T')[0]}.json`;
+    
+    // Добавляем ссылку в документ
+    document.body.appendChild(a);
+    
+    // Скачиваем файл
+    console.log('Initiating download...');
+    a.click();
+    
+    // Очищаем ресурсы
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast('Data exported successfully! 📤', 'success');
+    console.log('Export completed successfully');
+  } catch (error) {
+    console.error('Error exporting data:', error);
+    showToast(`Error exporting data: ${error.message}`, 'error');
+  }
+}
+
+async function handleImportData() {
+  try {
+    // Убедимся, что dataExporter доступен
+    if (!window.dataExporter) {
+      console.error('dataExporter is not available');
+      showToast('Error: Import functionality is not available', 'error');
+      return;
+    }
+    
+    // Создаем элемент для выбора файла
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) {
+        console.log('No file selected');
+        return;
+      }
+      
+      console.log('Reading file:', file.name, file.size, 'bytes');
+      
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          console.log('File read complete, parsing JSON...');
+          const fileContent = event.target.result;
+          
+          // Проверяем, что файл не пустой
+          if (!fileContent || fileContent.trim() === '') {
+            throw new Error('Import file is empty');
+          }
+          
+          // Парсим JSON
+          let data;
+          try {
+            data = JSON.parse(fileContent);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            throw new Error('Invalid JSON format in import file');
+          }
+          
+          console.log('Parsed import data:', {
+            hasPrompts: !!data.prompts,
+            hasFavorites: !!data.favorites,
+            hasNotes: !!data.notes,
+            hasSettings: !!data.settings,
+            promptsCount: data.prompts?.length || 0,
+            favoritesCount: data.favorites?.length || 0,
+            notesCount: data.notes?.length || 0
+          });
+          
+          // Проверяем структуру данных
+          if (!data || typeof data !== 'object') {
+            throw new Error('Invalid data format');
+          }
+          
+          // Проверяем, что есть хотя бы один тип данных
+          const hasData = 
+            (data.prompts && data.prompts.length > 0) || 
+            (data.favorites && data.favorites.length > 0) || 
+            (data.notes && data.notes.length > 0) ||
+            (data.settings && Object.keys(data.settings).length > 0);
+          
+          if (!hasData) {
+            throw new Error('No valid data found in import file');
+          }
+          
+          // Импортируем данные
+          await window.dataExporter.importAllData(data);
+          console.log('Data imported successfully');
+          
+          // Обновляем все представления
+          try {
+            console.log('Refreshing UI...');
+            await Promise.all([
+              typeof loadFavorites === 'function' ? loadFavorites() : Promise.resolve(),
+              typeof loadPrompts === 'function' ? loadPrompts() : Promise.resolve(),
+              typeof loadNotes === 'function' ? loadNotes() : Promise.resolve()
+            ]);
+            console.log('UI refreshed successfully');
+            
+            showToast('Data imported successfully! ✨', 'success');
+          } catch (refreshError) {
+            console.error('Error refreshing UI:', refreshError);
+            throw new Error('Failed to update display after import');
+          }
+        } catch (error) {
+          console.error('Error during import:', error);
+          showToast(`Import error: ${error.message}`, 'error');
+        }
+      };
+      
+      reader.onerror = (error) => {
+        console.error('Error reading file:', error);
+        showToast('Error reading import file', 'error');
+      };
+      
+      reader.readAsText(file);
+    };
+    
+    input.click();
+  } catch (error) {
+    console.error('Error importing data:', error);
+    showToast(`Error importing data: ${error.message}`, 'error');
+  }
+}
+
+// Add toast notification function if it doesn't exist
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  
+  document.body.appendChild(toast);
+  
+  // Trigger reflow
+  toast.offsetHeight;
+  
+  // Add visible class for animation
+  toast.classList.add('visible');
+  
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 300);
+  }, 3000);
+}
+
+// Add toast styles if they don't exist
+const style = document.createElement('style');
+style.textContent = `
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    padding: 10px 20px;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    z-index: 10000;
+    opacity: 0;
+    transition: all 0.3s ease;
+  }
+  
+  .toast.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+  
+  .toast-success {
+    background-color: #4caf50;
+  }
+  
+  .toast-error {
+    background-color: #f44336;
+  }
+  
+  .toast-info {
+    background-color: #2196f3;
+  }
+`;
+document.head.appendChild(style);
+
+// Добавим функцию для создания тестовых данных
+async function createTestData() {
+  try {
+    console.log('Creating test data...');
+    
+    // Создаем тестовый промпт
+    const testPrompt = {
+      id: 'test-prompt-' + Date.now(),
+      title: 'Test Prompt',
+      text: 'This is a test prompt created for testing export/import functionality.',
+      tags: ['test', 'export', 'import'],
+      date: new Date().toISOString(),
+      pinned: false
+    };
+    
+    // Создаем тестовый избранный чат
+    const testFavorite = {
+      id: 'test-favorite-' + Date.now(),
+      title: 'Test Favorite Chat',
+      url: 'https://example.com/chat',
+      description: 'This is a test favorite created for testing export/import functionality.',
+      tags: ['test', 'export', 'import'],
+      date: new Date().toISOString(),
+      pinned: false
+    };
+    
+    // Создаем тестовую заметку
+    const testNote = {
+      content: 'This is a test note created for testing export/import functionality.',
+      date: new Date().toISOString(),
+      pinned: false
+    };
+    
+    // Сохраняем тестовые данные
+    console.log('Saving test prompt...');
+    await promptDB.addPrompt(testPrompt);
+    
+    console.log('Saving test favorite...');
+    await favoritesDB.addFavorite(testFavorite);
+    
+    console.log('Saving test note...');
+    await notesDB.addNote(testNote);
+    
+    console.log('Test data created successfully');
+    
+    // Обновляем интерфейс
+    await Promise.all([
+      loadFavorites(),
+      loadPrompts(),
+      loadNotes()
+    ]);
+    
+    showToast('Test data created successfully! 🧪', 'success');
+  } catch (error) {
+    console.error('Error creating test data:', error);
+    showToast(`Error creating test data: ${error.message}`, 'error');
+  }
+}
+
+// Добавим кнопку для создания тестовых данных (только для отладки)
+document.addEventListener('DOMContentLoaded', () => {
+  // Добавляем скрытую кнопку, которую можно активировать через консоль
+  const createTestDataBtn = document.createElement('button');
+  createTestDataBtn.id = 'createTestDataBtn';
+  createTestDataBtn.style.display = 'none';
+  createTestDataBtn.textContent = 'Create Test Data';
+  createTestDataBtn.addEventListener('click', createTestData);
+  document.body.appendChild(createTestDataBtn);
+  
+  // Добавляем кнопку для проверки содержимого баз данных
+  const checkDbBtn = document.createElement('button');
+  checkDbBtn.id = 'checkDbBtn';
+  checkDbBtn.style.display = 'none';
+  checkDbBtn.textContent = 'Check Database Contents';
+  checkDbBtn.addEventListener('click', checkDatabaseContents);
+  document.body.appendChild(checkDbBtn);
+});
+
+// Функция для проверки содержимого баз данных
+async function checkDatabaseContents() {
+  try {
+    console.log('Checking database contents...');
+    
+    // Проверяем промпты
+    console.log('Checking prompts...');
+    await promptDB.init();
+    const prompts = await promptDB.getAllPrompts();
+    console.log('Prompts in database:', prompts);
+    
+    // Проверяем избранное
+    console.log('Checking favorites...');
+    await favoritesDB.init();
+    const favorites = await favoritesDB.getFavorites();
+    console.log('Favorites in database:', favorites);
+    
+    // Проверяем заметки
+    console.log('Checking notes...');
+    await notesDB.init();
+    const notes = await notesDB.getAllNotes();
+    console.log('Notes in database:', notes);
+    
+    // Выводим сводку
+    console.log('Database contents summary:', {
+      promptsCount: prompts.length,
+      favoritesCount: favorites.length,
+      notesCount: notes.length
+    });
+    
+    // Проверяем экспорт
+    console.log('Testing export...');
+    const exportData = await dataExporter.exportAllData();
+    console.log('Export data:', exportData);
+    
+    showToast('Database check completed. See console for details.', 'info');
+  } catch (error) {
+    console.error('Error checking database contents:', error);
+    showToast(`Error checking database: ${error.message}`, 'error');
+  }
+}
+
+// Initialize databases when needed
+async function initDatabases() {
+  try {
+    await Promise.all([
+      promptDB.init(),
+      favoritesDB.init(),
+      notesDB.init()
+    ]);
+    console.log('All databases initialized successfully');
+  } catch (error) {
+    console.error('Error initializing databases:', error);
+    throw error;
+  }
+}
+

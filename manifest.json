@@ -43,7 +43,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["db.js", "main.css"],
+      "resources": ["db.js", "main.css", "settings.css"],
       "matches": [
         "https://chat.deepseek.com/*",
         "https://aistudio.google.com/*"

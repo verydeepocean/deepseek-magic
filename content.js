@@ -156,6 +156,7 @@ async function initializeContentScript() {
     // For other sites like DeepSeek, load the full CSS
     try {
       await loadCSS('main.css');
+      await loadCSS('settings.css');
     } catch (error) {
       console.warn('CSS loading error:', error);
     }

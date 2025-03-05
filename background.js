@@ -425,6 +425,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
+    // Handle generate text message
+    if (message.type === 'GENERATE_TEXT') {
+      generateText(message).then(response => {
+        sendResponse(response);
+      }).catch(error => {
+        sendResponse({ status: 'error', error: error.message });
+      });
+      return true;
+    }
+    
     // Handle update favorite message
     if (message.type === 'UPDATE_FAVORITE') {
       if (!message.favorite) {
@@ -603,4 +613,72 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       await sendContentNotification(tab.id, 'Error saving to favorites! ❌', true);
     }
   }
-}); 
+});
+
+// Function to generate text using AI API
+async function generateText(message) {
+  const { provider, model, apiKey, prompt } = message;
+
+  if (!apiKey || !model) {
+    throw new Error('API key and model are required');
+  }
+
+  try {
+    let response;
+    if (provider === 'openrouter') {
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': chrome.runtime.getURL(''),
+          'X-Title': 'DeepSeek Magic'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens: 500
+        })
+      });
+    } else if (provider === 'google') {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500
+          }
+        })
+      });
+    } else {
+      throw new Error('Unsupported provider');
+    }
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || 'Failed to generate text');
+    }
+
+    const data = await response.json();
+    let generatedText;
+
+    if (provider === 'openrouter') {
+      generatedText = data.choices[0].message.content;
+    } else if (provider === 'google') {
+      generatedText = data.candidates[0].content.parts[0].text;
+    }
+
+    return {
+      status: 'ok',
+      text: generatedText
+    };
+  } catch (error) {
+    console.error('Error generating text:', error);
+    throw error;
+  }
+} 

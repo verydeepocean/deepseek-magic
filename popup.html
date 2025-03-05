@@ -4,11 +4,16 @@
   <meta charset="UTF-8">
   <title>DeepSeek Magic</title>
   <link rel="stylesheet" href="main.css">
+  <link rel="stylesheet" href="custom.css">
+  <link rel="stylesheet" href="settings.css">
 </head>
 <body class="deepseek-extension-body deepseek-extension-root">
   <div class="header">
     <h1 class="header-title">DeepSeek Magic</h1>
     <div class="theme-buttons">
+      <button class="theme-btn export-btn" id="exportDataBtn" title="Export data">📤</button>
+      <button class="theme-btn import-btn" id="importDataBtn" title="Import data">📥</button>
+      <button class="theme-btn settings-btn" id="openSettingsBtn" title="Settings">⚙️</button>
       <button class="theme-btn theme-toggle" title="Toggle theme">☀️</button>
       <button class="theme-btn delete-btn" title="Clear all">🗑️</button>
     </div>
@@ -125,7 +130,14 @@
           <input type="text" id="editFavoriteTitle" placeholder="Enter favorite title">
         </div>
         <div class="form-group">
-          <label for="editFavoriteDescription">Description</label>
+          <label for="editFavoriteDescription">
+            Description
+            <button id="generateDescriptionBtn" class="ai-generate-btn" title="Generate Description with AI">
+              <svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+            </button>
+          </label>
           <textarea id="editFavoriteDescription" class="prompt-input" placeholder="Enter description"></textarea>
         </div>
         <div class="form-group">
@@ -189,6 +201,85 @@
   <!-- Floating Add Note button -->
   <button id="addNoteButton" class="floating-button">+ Add Note</button>
 
+  <!-- Modal for settings -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal settings-modal">
+      <div class="modal-header">
+        <h2 class="modal-title">Settings</h2>
+        <button class="modal-close" id="closeSettingsModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-form">
+          <!-- API Section -->
+          <div class="settings-section">
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="providerSelect">API Provider</label>
+                <select id="providerSelect" class="settings-select">
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="google">Google AI</option>
+                </select>
+              </div>
+              
+              <div class="settings-field">
+                <label for="modelSelect">Model</label>
+                <select id="modelSelect" class="settings-select">
+                  <!-- Models will be populated based on selected provider -->
+                </select>
+              </div>
+            </div>
+            
+            <div class="settings-row">
+              <div class="settings-field api-key-field">
+                <label for="apiKeyInput">API Key</label>
+                <div class="api-key-container">
+                  <input type="password" id="apiKeyInput" class="settings-input" placeholder="Enter your API key">
+                  <button id="toggleApiKeyVisibility" class="toggle-visibility-btn" title="Toggle visibility">
+                    <svg class="eye-icon" viewBox="0 0 24 24" width="16" height="16">
+                      <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                    </svg>
+                  </button>
+                  <button id="testConnectionBtn" class="test-connection-icon" title="Test Connection">
+                    <svg class="test-icon" viewBox="0 0 24 24" width="16" height="16">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Prompt Templates Section -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">Prompt Templates</h3>
+            
+            <div class="settings-field">
+              <label for="titlePromptInput">Title Generation</label>
+              <textarea id="titlePromptInput" class="settings-textarea" placeholder="Enter prompt template for title generation"></textarea>
+            </div>
+            
+            <div class="settings-field">
+              <label for="summaryPromptInput">Summary Generation</label>
+              <textarea id="summaryPromptInput" class="settings-textarea" placeholder="Enter prompt template for summary generation"></textarea>
+            </div>
+            
+            <div class="settings-field">
+              <label for="tagsPromptInput">Tags Generation</label>
+              <textarea id="tagsPromptInput" class="settings-textarea" placeholder="Enter prompt template for tags generation"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="connectionStatus" class="connection-status"></div>
+        <div class="modal-actions">
+          <button id="closeSettingsBtn" class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings button in header -->
   <script type="module" src="popup.js"></script>
 </body>
 </html> 

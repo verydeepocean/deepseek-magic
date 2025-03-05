@@ -647,6 +647,27 @@ body::-webkit-scrollbar-thumb {
   color: var(--text-color);
 }
 
+/* Settings modal floating title */
+#settingsModal .modal-header {
+  position: relative;
+  margin-top: 15px; /* Add margin to create space for the floating bar */
+}
+
+#settingsModal .modal-title {
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--bg-color);
+  padding: 5px 30px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+  min-width: 120px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
 .modal-close {
   background: none;
   border: none;
@@ -711,6 +732,9 @@ body::-webkit-scrollbar-thumb {
   color: var(--text-color);
   font-size: 14px;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .form-group input {
@@ -810,7 +834,23 @@ button.tag-remove,
 .prompt-tags .tag button,
 .prompt-tags .tag::after,
 .prompt-tags .tag::before,
-.prompt-tags .tag > *:not(text) {
+.prompt-tags .tag > *:not(text),
+/* Add specific rules for search input tags */
+.search-input .tag .tag-remove,
+.search-input .tag button,
+.search-input .tag::after,
+.search-input .tag::before,
+.search-input .tag > *:not(text),
+#promptSearchInput .tag .tag-remove,
+#promptSearchInput .tag button,
+#promptSearchInput .tag::after,
+#promptSearchInput .tag::before,
+#promptSearchInput .tag > *:not(text),
+#favoritesSearchInput .tag .tag-remove,
+#favoritesSearchInput .tag button,
+#favoritesSearchInput .tag::after,
+#favoritesSearchInput .tag::before,
+#favoritesSearchInput .tag > *:not(text) {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -825,7 +865,7 @@ button.tag-remove,
   clear: both !important;
 }
 
-/* Show tag remove buttons only in edit modals */
+/* Show tag remove buttons ONLY in edit modals */
 #editModal .tags-input .tag-remove,
 #editFavoriteModal .tags-input .tag-remove,
 #addPromptModal .tags-input .tag-remove {
@@ -1057,18 +1097,6 @@ button.tag-remove,
   margin-bottom: 0;
 }
 
-.favorite-item.pinned {
-  border-left: 3px solid var(--link-color);
-  background: linear-gradient(to right, rgba(13, 110, 253, 0.03), var(--bg-color) 50%);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.12);
-}
-
-[data-theme="dark"] .favorite-item.pinned,
-.deepseek-extension-root[data-theme="dark"] .favorite-item.pinned {
-  background: linear-gradient(to right, rgba(110, 168, 254, 0.05), var(--bg-color) 50%);
-  border-left-color: var(--link-color-dark);
-}
-
 .favorite-item-title {
   margin: 0;
   font-size: 14px;
@@ -1248,55 +1276,6 @@ button.tag-remove,
   padding-bottom: 0;
 }
 
-.prompt-item.pinned {
-  border-left: 3px solid var(--accent-color);
-  background-color: var(--hover-color);
-  position: relative;
-  cursor: move;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
-              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.2s ease;
-  will-change: transform, box-shadow, opacity;
-}
-
-.prompt-item.pinned::before {
-  content: '';
-  width: 15px;
-  background: var(--accent-color);
-  opacity: 0.7;
-  position: absolute;
-  left: -3px;
-  top: 0;
-  bottom: 0;
-  cursor: move;
-  transition: opacity 0.2s ease;
-}
-
-.prompt-item.pinned::before:hover {
-  opacity: 1;
-}
-
-.prompt-item.pinned.dragging {
-  opacity: 0.7;
-  transform: scale(1.02) rotate(1deg);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-  z-index: 1000;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
-              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.15s ease;
-}
-
-.prompt-item.pinned:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
-              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.prompt-item.pinned.drag-over {
-  transform: translateY(10px);
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
 
 /* Chat history styles */
 .chat-message {
@@ -2415,105 +2394,427 @@ button.tag-remove,
 /* Dark theme specific styles for tag remove buttons */
 /* Removed duplicate dark theme styles */
 
-.deepseek-extension-root[data-theme="dark"] #editModal .tags-input .tag-remove:hover,
-.deepseek-extension-root[data-theme="dark"] #editFavoriteModal .tags-input .tag-remove:hover,
-.deepseek-extension-root[data-theme="dark"] #addPromptModal .tags-input .tag-remove:hover,
-/* Removed duplicate dark theme styles */
-
-/* Additional specific rules for search inputs to ensure no tag buttons */
-.search-input .tag,
-#promptSearchInput .tag,
-#favoritesSearchInput .tag {
-  display: inline-block !important;
-  background: var(--border-color) !important;
+/* Ensure search input remains a simple text field */
+.search-input,
+#promptSearchInput,
+#favoritesSearchInput,
+#notesSearchInput {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 100% !important;
+  height: auto !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px !important;
+  background: var(--btn-bg) !important;
   color: var(--text-color) !important;
-  padding: 2px 8px !important;
-  border-radius: 12px !important;
-  font-size: 12px !important;
-  margin: 2px !important;
-  cursor: pointer !important;
-  user-select: none !important;
-  transition: all 0.2s ease !important;
+  font-size: 14px !important;
+  line-height: normal !important;
+  box-sizing: border-box !important;
+  appearance: textfield !important;
+  -webkit-appearance: textfield !important;
+  -moz-appearance: textfield !important;
+  text-align: left !important;
+  cursor: text !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow: hidden !important;
+  resize: none !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  float: none !important;
+  clear: both !important;
 }
 
-/* Ensure no buttons or remove elements in search input tags */
-.search-input .tag *,
-#promptSearchInput .tag *,
-#favoritesSearchInput .tag * {
+/* Prevent any tag-like elements in search inputs */
+.search-input *,
+#promptSearchInput *,
+#favoritesSearchInput *,
+#notesSearchInput * {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
 }
 
-/* Google AI Studio chat styles */
-.chat-message[data-source="google-ai"].user {
-  margin-right: 8%;
-  margin-left: 2%;
-  background: #f0f7ff;
-  border: 1px solid #cce5ff;
-  border-left: 4px solid #4285f4;
+/* Notification styles */
+.notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 20px;
+  border-radius: 4px;
+  background: var(--success-color);
+  color: white;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
 }
 
-.chat-message[data-source="google-ai"].assistant {
-  margin-left: 8%;
-  margin-right: 2%;
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-left: 4px solid #34a853;
+.notification.show {
+  opacity: 1;
+  transform: translateX(0);
 }
 
-/* Removed duplicate dark theme styles */
-
-[data-theme="dark"] .chat-message[data-source="google-ai"].user,
-.deepseek-extension-root[data-theme="dark"] .chat-message[data-source="google-ai"].user {
-  background: #1a2634;
-  border-color: #4285f4;
+.notification.error {
+  background: var(--error-color);
 }
 
-[data-theme="dark"] .chat-message[data-source="google-ai"].assistant,
-.deepseek-extension-root[data-theme="dark"] .chat-message[data-source="google-ai"].assistant {
-  background: #1e2429;
-  border-color: #34a853;
-}
-
-/* Source indicator in chat history */
-.chat-source-indicator {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 12px;
+/* Character counter */
+.char-counter {
   font-size: 12px;
-  font-weight: 500;
+  color: var(--description-color);
   margin-left: 8px;
 }
 
-.chat-source-indicator.deepseek {
-  background: rgba(13, 110, 253, 0.1);
-  color: #0d6efd;
+.char-counter.near-limit {
+  color: var(--warning-color);
 }
 
-.chat-source-indicator.google-ai {
-  background: rgba(66, 133, 244, 0.1);
-  color: #4285f4;
+.char-counter.at-limit {
+  color: var(--error-color);
 }
 
-/* Removed duplicate dark theme styles */
-
-[data-theme="dark"] .chat-source-indicator.deepseek {
-  background: rgba(13, 110, 253, 0.2);
+/* Empty state */
+.empty-state {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 0.3s ease forwards;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--description-color);
 }
 
-[data-theme="dark"] .chat-source-indicator.google-ai {
-  background: rgba(66, 133, 244, 0.2);
+/* Prompts list */
+#promptsList {
+  margin-top: 16px;
+  min-height: 200px;
+  transition: all 0.3s ease;
 }
 
-/* Frequent tags container */
+/* Favorite title styles */
+.favorite-title {
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  display: block;
+}
+
+.favorite-title:hover {
+  color: var(--link-color);
+  text-decoration: underline;
+}
+
+[data-theme="dark"] .favorite-title:hover,
+.deepseek-extension-root[data-theme="dark"] .favorite-title:hover {
+  color: var(--link-color-dark);
+}
+
+/* Tabs styles */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  color: var(--text-color);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.tab-btn::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--link-color);
+  transform: scaleX(0);
+  transition: transform 0.2s ease;
+}
+
+.tab-btn.active {
+  opacity: 1;
+}
+
+.tab-btn.active::after {
+  transform: scaleX(1);
+}
+
+.tab-content {
+  display: none;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s ease;
+}
+
+.tab-content.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Favorites styles */
+.favorites-list {
+  margin-top: 16px;
+  padding: 10px;
+}
+
+.pinned-favorites-container {
+  margin-bottom: 26px;  /* Отступ между группами избранных чатов */
+  padding-bottom: 0;
+}
+
+.unpinned-favorites-container {
+  padding-top: 0;
+}
+
+.favorite-item {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  background: var(--btn-bg);
+  transition: all 0.3s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.favorite-item:last-child {
+  margin-bottom: 0;
+}
+
+.favorite-item-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+  text-decoration: none;
+}
+
+.favorite-item-date {
+  font-size: 12px;
+  color: var(--description-color);
+  margin-top: 4px;
+}
+
+.favorite-item-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.favorite-item:hover .favorite-item-actions {
+  opacity: 1;
+}
+
+.favorite-item.removing {
+  animation: fadeOutDown 0.3s ease forwards;
+}
+
+/* Context menu styles */
+.context-menu {
+  position: fixed;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: 0 2px 8px var(--modal-shadow-color);
+  z-index: 1000;
+  opacity: 0;
+  transform: scale(0.95);
+  transform-origin: top left;
+  transition: all 0.2s ease;
+}
+
+.context-menu.show {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s ease;
+}
+
+.context-menu-item:hover {
+  background: var(--btn-hover-bg);
+}
+
+.floating-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: auto;
+  height: auto;
+  padding: 12px 20px;
+  border-radius: 25px;
+  background-color: var(--btn-bg);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 1000;
+}
+
+.connection-status.success {
+  color: var(--success-color);
+}
+
+.connection-status.error {
+  color: var(--error-color);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+#testConnectionBtn {
+  margin-top: 5px;
+}
+
+#settingsModal .modal {
+  max-width: 500px;
+  max-height: 72vh; /* Reduced from 90vh by 20% */
+}
+
+#settingsModal .modal-body {
+  max-height: calc(72vh - 130px); /* Reduced from 90vh by 20% */
+  overflow-y: auto;
+}
+
+#settingsModal .modal-footer {
+  justify-content: space-between;
+}
+
+/* Settings Modal Styles */
+.settings-modal {
+  max-width: 460px;
+  width: 95%;
+  max-height: 72vh; /* Reduced from 90vh by 20% */
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+#settingsModal .modal-body {
+  max-height: calc(72vh - 130px); /* Reduced from 90vh by 20% */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+  box-sizing: border-box;
+}
+
+.api-key-field {
+  width: 100%;
+  min-width: 100%;
+}
+
+.api-key-container {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.api-key-container .settings-input {
+  flex: 1;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.settings-select,
+.settings-input,
+.settings-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-size: 14px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.settings-select:focus,
+.settings-input:focus,
+.settings-textarea:focus {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px var(--focus-shadow-color);
+  outline: none;
+}
+
+/* Frequent Tags Container Styles */
 .frequent-tags-container {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 8px 0 16px;
+  margin-bottom: 16px;
   padding: 0 4px;
 }
 
@@ -2533,7 +2834,6 @@ button.tag-remove,
 .frequent-tags-container .tag:hover {
   background: var(--btn-hover-bg);
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .frequent-tags-container .tag.active {
@@ -2541,12 +2841,249 @@ button.tag-remove,
   color: white;
 }
 
-[data-theme="dark"] .frequent-tags-container .tag.active,
-.deepseek-extension-root[data-theme="dark"] .frequent-tags-container .tag.active {
+[data-theme="dark"] .frequent-tags-container .tag.active {
   background: var(--link-color-dark);
+  color: var(--bg-color);
 }
 
-/* Empty state for frequent tags */
-.frequent-tags-container:empty {
-  display: none;
-} 
+/* Connection Status Styles */
+.connection-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  text-align: center;
+  min-height: 20px;
+}
+
+.connection-status.success {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4CAF50;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.connection-status.error {
+  background-color: rgba(244, 67, 54, 0.2);
+  color: #F44336;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.connection-status.loading {
+  background-color: rgba(33, 150, 243, 0.1);
+  color: #2196F3;
+  border: 1px solid rgba(33, 150, 243, 0.2);
+  position: relative;
+}
+
+.connection-status.loading::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 30%;
+  background-color: rgba(33, 150, 243, 0.2);
+  animation: loading-animation 1.5s infinite;
+  border-radius: 3px;
+}
+
+@keyframes loading-animation {
+  0% {
+    left: 0;
+    width: 30%;
+  }
+  50% {
+    width: 60%;
+  }
+  100% {
+    left: 70%;
+    width: 30%;
+  }
+}
+
+/* Test Connection Icon */
+#testConnectionBtn {
+  /* Removing absolute positioning as it's handled in settings.css */
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--primary-color);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#testConnectionBtn:hover {
+  color: var(--primary-color-dark);
+}
+
+#testConnectionBtn:disabled {
+  color: #cccccc;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.test-icon {
+  fill: currentColor;
+}
+
+/* API Key Field */
+.api-key-container {
+  display: flex;
+  position: relative;
+  width: 100%;
+}
+
+.api-key-field {
+  width: 100%;
+}
+
+.toggle-visibility-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-color-secondary);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-visibility-btn:hover {
+  color: var(--text-color);
+}
+
+.eye-icon {
+  fill: currentColor;
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+}
+
+.modal-actions .btn {
+  margin-left: 10px;
+}
+
+#settingsModal .modal-footer {
+  display: flex;
+  flex-direction: column;
+  padding: 15px 20px;
+}
+
+#testConnectionBtn.testing {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* API Key Field */
+.ai-generate-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--link-color);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-generate-btn:hover {
+  background: var(--btn-hover-bg);
+  transform: translateY(-1px);
+}
+
+.ai-generate-btn:active {
+  transform: translateY(0);
+}
+
+.ai-icon {
+  fill: currentColor;
+}
+
+[data-theme="dark"] .ai-generate-btn {
+  color: var(--link-color-dark);
+}
+
+.favorite-description {
+  margin: 8px 0;
+  color: var(--text-color);
+  line-height: 1.4;
+  font-size: 14px;
+}
+
+/* Add dash-dotted border for pinned items description */
+.prompt-item.pinned .favorite-description {
+  border: 2px solid #adb5bd;
+  border-style: dashed;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .prompt-item.pinned .favorite-description,
+.deepseek-extension-root[data-theme="dark"] .prompt-item.pinned .favorite-description {
+  border-color: #6c757d;
+}
+
+/* Styles for HTML elements inside favorite-description */
+.favorite-description a {
+  color: var(--link-color);
+  text-decoration: underline;
+}
+
+.favorite-description code {
+  background: var(--btn-hover-bg);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.favorite-description pre {
+  background: var(--btn-hover-bg);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.favorite-description ul, 
+.favorite-description ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.favorite-description p {
+  margin: 8px 0;
+}
+
+.favorite-description img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .favorite-description a {
+  color: var(--link-color-dark);
+}

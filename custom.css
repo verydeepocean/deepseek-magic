@@ -1,0 +1,12 @@
+/* Import settings styles */
+@import url('settings.css');
+
+/* Custom overrides for the Settings modal - these take precedence over settings.css */
+#settingsModal .modal-header {
+  justify-content: flex-end !important; /* Ensure the close button is on the right */
+}
+
+#settingsModal .modal-close {
+  font-size: 28px !important; /* Larger font size */
+  padding: 4px 8px !important; /* More padding */
+} 

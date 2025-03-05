@@ -1,0 +1,464 @@
+/* Settings CSS - Extracted from main.css */
+
+/* Settings modal floating title */
+#settingsModal .modal-header {
+  position: relative;
+  margin-top: 15px; /* Add margin to create space for the floating bar */
+}
+
+#settingsModal .modal-title {
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--bg-color);
+  padding: 5px 30px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+  min-width: 120px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+.connection-status.success {
+  color: var(--success-color);
+}
+
+.connection-status.error {
+  color: var(--error-color);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+#settingsModal .modal {
+  max-width: 500px;
+  max-height: 72vh; /* Reduced from 90vh by 20% */
+}
+
+#settingsModal .modal-body {
+  max-height: calc(72vh - 130px); /* Reduced from 90vh by 20% */
+  overflow-y: auto;
+}
+
+#settingsModal .modal-footer {
+  justify-content: space-between;
+}
+
+/* Settings Modal Styles */
+.settings-modal {
+  max-width: 460px;
+  width: 95%;
+  max-height: 72vh; /* Reduced from 90vh by 20% */
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+#settingsModal .modal-body {
+  max-height: calc(72vh - 130px); /* Reduced from 90vh by 20% */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+  box-sizing: border-box;
+}
+
+.api-key-field {
+  width: 100%;
+  min-width: 100%;
+}
+
+.api-key-container {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  gap: 8px; /* Add gap between elements */
+}
+
+.api-key-container .settings-input {
+  flex: 1;
+  max-width: 75%; /* Make the API Key field smaller */
+  border-radius: 8px;
+  padding-right: 36px; /* Make room for the visibility toggle */
+}
+
+.settings-select,
+.settings-input,
+.settings-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-size: 14px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.settings-select:focus,
+.settings-input:focus,
+.settings-textarea:focus {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px var(--focus-shadow-color);
+  outline: none;
+}
+
+/* Frequent Tags Container Styles */
+.frequent-tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 0 4px;
+}
+
+.frequent-tags-container .tag {
+  display: inline-flex;
+  align-items: center;
+  background: var(--border-color);
+  color: var(--text-color);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.frequent-tags-container .tag:hover {
+  background: var(--btn-hover-bg);
+  transform: translateY(-1px);
+}
+
+.frequent-tags-container .tag.active {
+  background: var(--link-color);
+  color: white;
+}
+
+[data-theme="dark"] .frequent-tags-container .tag.active {
+  background: var(--link-color-dark);
+  color: var(--bg-color);
+}
+
+/* Connection Status Styles */
+.connection-status {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  text-align: center;
+  min-width: 200px;
+  max-width: 90%;
+  background: var(--bg-color);
+  color: var(--text-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  opacity: 0;
+  border: 1px solid var(--border-color);
+}
+
+.connection-status.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.connection-status.success {
+  background-color: rgba(76, 175, 80, 0.95);
+  color: white;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.connection-status.error {
+  background-color: rgba(244, 67, 54, 0.95);
+  color: white;
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.connection-status.loading {
+  background-color: rgba(33, 150, 243, 0.95);
+  color: white;
+  border-color: rgba(33, 150, 243, 0.3);
+  position: relative;
+}
+
+.connection-status.loading::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 30%;
+  background-color: rgba(255, 255, 255, 0.3);
+  animation: loading-animation 1.5s infinite;
+  border-radius: 1px;
+}
+
+@keyframes loading-animation {
+  0% {
+    left: 0;
+    width: 30%;
+  }
+  50% {
+    width: 60%;
+  }
+  100% {
+    left: 70%;
+    width: 30%;
+  }
+}
+
+/* Test Connection Icon */
+#testConnectionBtn,
+.test-connection-icon {
+  position: relative;
+  top: -2px; /* Move button slightly up */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px; /* Slightly smaller height */
+  min-width: 32px;
+  padding: 0 8px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  color: var(--primary-color);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+#testConnectionBtn:hover,
+.test-connection-icon:hover {
+  color: var(--primary-color-dark);
+  background-color: var(--btn-hover-bg);
+  border-color: var(--btn-hover-border);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#testConnectionBtn:active,
+.test-connection-icon:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] #testConnectionBtn,
+[data-theme="dark"] .test-connection-icon {
+  background-color: var(--btn-bg);
+  border-color: var(--btn-border);
+}
+
+[data-theme="dark"] #testConnectionBtn:hover,
+[data-theme="dark"] .test-connection-icon:hover {
+  background-color: var(--btn-hover-bg);
+  border-color: var(--btn-hover-border);
+}
+
+.test-icon {
+  fill: currentColor;
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+#testConnectionBtn:hover .test-icon,
+.test-connection-icon:hover .test-icon {
+  transform: scale(1.1);
+}
+
+/* Toggle Visibility Button */
+.toggle-visibility-btn {
+  position: absolute;
+  right: 28%; /* Position relative to the input width */
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-color-secondary);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.toggle-visibility-btn:hover {
+  color: var(--text-color);
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .toggle-visibility-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.eye-icon {
+  fill: currentColor;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+}
+
+.modal-actions .btn {
+  margin-left: 10px;
+}
+
+#settingsModal .modal-footer {
+  display: flex;
+  flex-direction: column;
+  padding: 15px 20px;
+}
+
+#testConnectionBtn.testing,
+.test-connection-icon.testing {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Toast Notification Styles */
+.toast-notification {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  background: var(--bg-color);
+  color: var(--text-color);
+  padding: 12px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.3s ease;
+  border: 1px solid var(--border-color);
+  font-size: 14px;
+  text-align: center;
+  min-width: 200px;
+  max-width: 90%;
+}
+
+.toast-notification.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.toast-notification.success {
+  background-color: rgba(76, 175, 80, 0.95);
+  color: white;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.toast-notification.error {
+  background-color: rgba(244, 67, 54, 0.95);
+  color: white;
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.toast-notification.loading {
+  background-color: rgba(33, 150, 243, 0.95);
+  color: white;
+  border-color: rgba(33, 150, 243, 0.3);
+}
+
+/* Export/Import buttons */
+.export-btn,
+.import-btn {
+  font-size: 16px;
+  padding: 4px 8px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.export-btn:hover,
+.import-btn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.theme-dark .export-btn:hover,
+.theme-dark .import-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Hide Add buttons by default when Favorites tab is active */
+.tab-content[id="favorites-tab"].active ~ #addPromptButton,
+.tab-content[id="favorites-tab"].active ~ #addNoteButton {
+  display: none !important;
+}
+
+/* Show Add Prompt button only when Prompts tab is active */
+.tab-content[id="prompts-tab"].active ~ #addPromptButton {
+  display: flex !important;
+}
+
+/* Show Add Note button only when Notes tab is active */
+.tab-content[id="notes-tab"].active ~ #addNoteButton {
+  display: flex !important;
+}
