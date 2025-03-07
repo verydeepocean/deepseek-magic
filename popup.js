@@ -167,10 +167,11 @@ function createFavoriteElement(favorite) {
           // Get current search query
           let currentQuery = searchInput.value.trim();
           
-          // If the tag is already in the search query, don't add it again
-          if (!currentQuery.includes(cleanTag)) {
-            // Add the tag to the existing search query
-            const newQuery = currentQuery ? `${currentQuery} ${cleanTag}` : cleanTag;
+          // If the tag is already in the search query (with or without #), don't add it again
+          const tagWithHash = `#${cleanTag}`;
+          if (!currentQuery.includes(tagWithHash)) {
+            // Add the tag to the existing search query with #
+            const newQuery = currentQuery ? `${currentQuery} ${tagWithHash}` : tagWithHash;
             searchInput.value = newQuery;
             // Trigger the search with the combined query
             loadFavorites(newQuery);
@@ -202,8 +203,8 @@ function createFavoriteElement(favorite) {
         const response = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
         if (response.status === 'ok') {
           const pinnedCount = response.favorites.filter(f => f.pinned).length;
-          if (pinnedCount >= 5) {
-            showNotification('Maximum number of pinned items (5) reached! 📌', true);
+          if (pinnedCount >= 10) {
+            showNotification('Maximum number of pinned items (10) reached! 📌', true);
             return;
           }
         }
@@ -396,6 +397,8 @@ function createFavoriteElement(favorite) {
   editBtn.onclick = (e) => {
     e.stopPropagation();
     currentEditingFavorite = favorite;
+    const modal = document.getElementById('editFavoriteModal');
+    modal.dataset.favoriteId = favorite.id;
     showModal('editFavoriteModal');
   };
   
@@ -651,7 +654,7 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
   // Convert to array and sort by frequency
   const sortedTags = Object.entries(tagFrequencies)
     .sort((a, b) => b[1] - a[1]) // Sort by frequency (descending)
-    .slice(0, 8); // Take top 8
+    .slice(0, 10); // Take top 10
   
   if (sortedTags.length === 0) return;
   
@@ -668,17 +671,20 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
         // Get current search query
         let currentQuery = searchInput.value.trim();
         
-        // If the tag is already in the search query, remove it (toggle behavior)
-        if (currentQuery.includes(tag)) {
+        // Add # to tag
+        const tagWithHash = `#${tag}`;
+        
+        // If the tag is already in the search query (with #), remove it (toggle behavior)
+        if (currentQuery.includes(tagWithHash)) {
           // Remove the tag from the query
           const words = currentQuery.split(/\s+/);
-          const filteredWords = words.filter(word => word.toLowerCase() !== tag.toLowerCase());
+          const filteredWords = words.filter(word => word.toLowerCase() !== tagWithHash.toLowerCase());
           currentQuery = filteredWords.join(' ');
           searchInput.value = currentQuery;
           tagElement.classList.remove('active');
         } else {
           // Add the tag to the existing search query
-          const newQuery = currentQuery ? `${currentQuery} ${tag}` : tag;
+          const newQuery = currentQuery ? `${currentQuery} ${tagWithHash}` : tagWithHash;
           searchInput.value = newQuery;
           tagElement.classList.add('active');
         }
@@ -745,7 +751,7 @@ async function loadFavorites(searchQuery = '', retryCount = 3) {
     
     // Try to load tag frequencies, but don't fail if it doesn't work
     try {
-      const tagFrequencies = await getCombinedTagFrequencies();
+      const tagFrequencies = await getCombinedTagFrequencies('favorites');
       displayFrequentTags('favoriteFrequentTags', tagFrequencies, 'favoritesSearchInput', loadFavorites);
     } catch (tagError) {
       console.debug('Failed to load tag frequencies:', tagError);
@@ -782,21 +788,40 @@ function filterFavoritesByQuery(favorites, searchQuery) {
     return favorites;
   }
   
+  // Split search query into hashtags and regular words
   const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
+  const hashtagWords = searchWords.filter(word => word.startsWith('#')).map(tag => tag.slice(1)); // Remove # from tags
+  const regularWords = searchWords.filter(word => !word.startsWith('#'));
   
   return favorites.filter(f => {
-    // Check if all search words are found in any of the fields
-    return searchWords.every(word => {
-      return f.title?.toLowerCase().includes(word) ||
-             f.url?.toLowerCase().includes(word) ||
-             f.description?.toLowerCase().includes(word) ||
-             (f.tags && f.tags.some(tag => tag.toLowerCase().includes(word))) ||
-             // Search in chat history messages
-             (f.messages && f.messages.some(message => 
-               message.content?.toLowerCase().includes(word) || 
-               message.html?.toLowerCase().includes(word)
-             ));
-    });
+    // If we have hashtags, check if ALL hashtags match tags exactly
+    if (hashtagWords.length > 0) {
+      const favoriteTags = (f.tags || []).map(tag => tag.toLowerCase());
+      const allHashtagsMatch = hashtagWords.every(hashtagWord => 
+        favoriteTags.some(tag => tag.includes(hashtagWord))
+      );
+      if (!allHashtagsMatch) return false;
+    }
+    
+    // If we have regular words, check if ALL words match any field (including tags)
+    if (regularWords.length > 0) {
+      const favoriteTags = (f.tags || []).map(tag => tag.toLowerCase());
+      return regularWords.every(word => {
+        return f.title?.toLowerCase().includes(word) ||
+               f.url?.toLowerCase().includes(word) ||
+               f.description?.toLowerCase().includes(word) ||
+               // Search in tags
+               favoriteTags.some(tag => tag.includes(word)) ||
+               // Search in chat history messages
+               (f.messages && f.messages.some(message => 
+                 message.content?.toLowerCase().includes(word) || 
+                 message.html?.toLowerCase().includes(word)
+               ));
+      });
+    }
+    
+    // If we only had hashtags and they all matched, return true
+    return true;
   });
 }
 
@@ -814,6 +839,14 @@ function renderFavorites(favorites, container) {
     .sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
+      if (a.pinned && b.pinned) {
+        // Sort by order if both are pinned
+        if (a.order !== undefined && b.order !== undefined) {
+          return a.order - b.order;
+        }
+        // If order is not set, fall back to date
+        return new Date(b.date) - new Date(a.date);
+      }
       return new Date(b.date) - new Date(a.date);
     })
     .forEach(favorite => {
@@ -859,12 +892,44 @@ if (favoritesSearchInput) {
   });
 }
 
+// Function to update tab counts
+async function updateTabCounts() {
+  try {
+    // Get counts from databases
+    const [favorites, prompts, notes] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'GET_FAVORITES' }).then(response => response.favorites || []),
+      chrome.runtime.sendMessage({ type: 'GET_PROMPTS' }).then(response => response.prompts || []),
+      notesDB.getAllNotes()
+    ]);
+
+    // Update tab buttons with counts
+    const favoritesTab = document.querySelector('[data-tab="favorites"]');
+    const promptsTab = document.querySelector('[data-tab="prompts"]');
+    const notesTab = document.querySelector('[data-tab="notes"]');
+
+    if (favoritesTab) {
+      favoritesTab.textContent = `Favorite Chats (${favorites.length})`;
+    }
+    if (promptsTab) {
+      promptsTab.textContent = `Prompts (${prompts.length})`;
+    }
+    if (notesTab) {
+      notesTab.textContent = `Notes (${notes.length})`;
+    }
+  } catch (error) {
+    console.error('Error updating tab counts:', error);
+  }
+}
+
 // Setup tabs
 function setupTabs() {
   const tabs = document.querySelectorAll('.tab-btn');
   const contents = document.querySelectorAll('.tab-content');
   const addPromptButton = document.getElementById('addPromptButton');
   const addNoteButton = document.getElementById('addNoteButton');
+
+  // Update counts initially
+  updateTabCounts();
 
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
@@ -891,6 +956,9 @@ function setupTabs() {
         addNoteButton.style.display = 'flex';
         loadNotes();
       }
+
+      // Update counts after loading
+      updateTabCounts();
     });
   });
 }
@@ -898,6 +966,12 @@ function setupTabs() {
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Received message in popup:', message.type);
+  
+  if (message.type === 'REFRESH_FAVORITES' || message.type === 'ADD_FAVORITE' || 
+      message.type === 'REFRESH_PROMPTS' || message.type === 'ADD_PROMPT' ||
+      message.type === 'REFRESH_NOTES' || message.type === 'ADD_NOTE') {
+    updateTabCounts();
+  }
   
   if (message.type === 'REFRESH_FAVORITES' || message.type === 'ADD_FAVORITE') {
     // Only reload favorites if we're on the favorites tab
@@ -926,6 +1000,7 @@ function setupTagsInput(container) {
   if (input.id === 'promptSearchInput' || input.id === 'favoritesSearchInput' || input.id === 'notesSearchInput') return null;
 
   let tags = new Set();
+  const specialTags = ['deepseek', 'gemini', 'chatgpt'];
 
   function addTag(tag) {
     // Clean tag from any remove buttons or special characters
@@ -1114,6 +1189,7 @@ function hideModal(modalId) {
       }
     } else if (modalId === 'editFavoriteModal') {
       currentEditingFavorite = null;
+      modal.dataset.favoriteId = '';
       if (currentEditFavoriteTagsManager) {
         currentEditFavoriteTagsManager.setTags([]);
         currentEditFavoriteTagsManager = null;
@@ -1260,19 +1336,37 @@ function createPromptElement(prompt) {
         const searchInput = document.getElementById('promptSearchInput');
         if (searchInput) {
           // Clean tag text from any remove buttons or special characters
-          const cleanTag = tag.replace(/[×✕✖✗✘]/g, '').trim();
+          const cleanTag = tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase();
+          console.log('Clicked tag:', cleanTag);
           
           // Get current search query
           let currentQuery = searchInput.value.trim();
+          console.log('Current query:', currentQuery);
           
-          // If the tag is already in the search query, don't add it again
-          if (!currentQuery.includes(cleanTag)) {
-            // Add the tag to the existing search query
-            const newQuery = currentQuery ? `${currentQuery} ${cleanTag}` : cleanTag;
+          // If the tag is already in the search query (with #), don't add it again
+          const tagWithHash = `#${cleanTag}`;
+          console.log('Tag with hash:', tagWithHash);
+          
+          if (currentQuery.toLowerCase().includes(tagWithHash.toLowerCase())) {
+            // Remove the tag if it's already in the search
+            const words = currentQuery.split(/\s+/);
+            const filteredWords = words.filter(word => 
+              word.toLowerCase() !== tagWithHash.toLowerCase()
+            );
+            currentQuery = filteredWords.join(' ');
+            searchInput.value = currentQuery;
+            tagSpan.classList.remove('active');
+            console.log('Removed tag, new query:', currentQuery);
+          } else {
+            // Add the tag to the existing search query with #
+            const newQuery = currentQuery ? `${currentQuery} ${tagWithHash}` : tagWithHash;
             searchInput.value = newQuery;
-            // Trigger the search with the combined query
-            loadPrompts(newQuery);
+            tagSpan.classList.add('active');
+            console.log('Added tag, new query:', newQuery);
           }
+          
+          // Trigger the search with the updated query
+          loadPrompts(searchInput.value.trim());
         }
       };
       tags.appendChild(tagSpan);
@@ -1294,8 +1388,8 @@ function createPromptElement(prompt) {
         const response = await chrome.runtime.sendMessage({ type: 'GET_PROMPTS' });
         if (response.status === 'ok') {
           const pinnedCount = response.prompts.filter(p => p.pinned).length;
-          if (pinnedCount >= 5) {
-            showNotification('Maximum number of pinned items (5) reached! 📌', true);
+          if (pinnedCount >= 10) {
+            showNotification('Maximum number of pinned items (10) reached! 📌', true);
             return;
           }
         }
@@ -1421,18 +1515,53 @@ async function loadPrompts(searchQuery = '', retryCount = 3) {
       return;
     }
     
-    // Enhanced filtering with individual words search
-    const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
+    // Enhanced filtering with tag-based search
     const filteredPrompts = searchQuery 
       ? prompts.filter(p => {
-          // Check if all search words are found in any of the fields
+          // Split search query into words and handle tag-based search
+          const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
+          
+          console.log('Search words:', searchWords);
+          console.log('Prompt tags:', p.tags);
+          
           return searchWords.every(word => {
-            return p.title?.toLowerCase().includes(word) ||
-                   p.text.toLowerCase().includes(word) ||
-                   (p.tags && p.tags.some(tag => tag.toLowerCase().includes(word)));
+            if (word.startsWith('#')) {
+              // For tag searches, remove the # and check if the prompt has the tag
+              const tagToSearch = word.slice(1).toLowerCase();
+              console.log('Searching for tag:', tagToSearch);
+              
+              // Make sure tags exist and is an array
+              if (!p.tags || !Array.isArray(p.tags)) {
+                console.log('No tags found for prompt');
+                return false;
+              }
+              
+              // Clean and lowercase all prompt tags for comparison
+              const promptTags = p.tags.map(tag => tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase());
+              console.log('Prompt tags after cleaning:', promptTags);
+              
+              const hasTag = promptTags.includes(tagToSearch);
+              console.log('Tag found?', hasTag);
+              return hasTag;
+            } else {
+              // For non-tag words, check title, text and tags
+              const titleMatch = p.title?.toLowerCase().includes(word) || false;
+              const textMatch = p.text.toLowerCase().includes(word);
+              
+              // Check tags if they exist
+              let tagMatch = false;
+              if (p.tags && Array.isArray(p.tags)) {
+                const promptTags = p.tags.map(tag => tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase());
+                tagMatch = promptTags.some(tag => tag.includes(word));
+              }
+              
+              return titleMatch || textMatch || tagMatch;
+            }
           });
         })
       : prompts;
+
+    console.log('Filtered prompts:', filteredPrompts.length);
 
     if (filteredPrompts.length === 0) {
       promptsList.innerHTML = '<div class="no-items">No matches found</div>';
@@ -1698,6 +1827,9 @@ async function initialize() {
   // Initialize settings
   await initSettingsModal();
   
+  // Update tab counts after initialization
+  await updateTabCounts();
+
   // Setup settings button
   document.getElementById('openSettingsBtn').addEventListener('click', () => {
     showModal('settingsModal');
@@ -1817,6 +1949,9 @@ async function initialize() {
         
         console.log('Clearing notes...');
         await notesDB.clearAll();
+
+        // Update tab counts after clearing
+        await updateTabCounts();
 
         // Send message to background script
         await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
@@ -2037,7 +2172,7 @@ async function initialize() {
     document.getElementById('editModal')?.addEventListener('click', (e) => {
       if (e.target.id === 'editModal') hideModal('editModal');
     });
-
+    
     // Setup modal events for add prompt modal
     document.getElementById('addPromptButton')?.addEventListener('click', () => showModal('addPromptModal'));
     document.getElementById('closeAddPromptModal')?.addEventListener('click', () => hideModal('addPromptModal'));
@@ -2157,10 +2292,18 @@ async function loadNotes() {
         return;
       }
 
-      // Sort notes by date (newest first) and pinned status
+      // Sort notes: pinned first (by order), then by date
       notes.sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
+        if (a.pinned && b.pinned) {
+          // Sort by order if both are pinned
+          if (a.order !== undefined && b.order !== undefined) {
+            return a.order - b.order;
+          }
+          // If order is not set, fall back to date
+          return new Date(b.date) - new Date(a.date);
+        }
         return new Date(b.date) - new Date(a.date);
       });
 
@@ -2351,18 +2494,9 @@ function createNoteCard(note) {
     
     // Добавляем обработчики для перетаскивания
     card.addEventListener('dragstart', (e) => {
-      // Only allow dragging from the drag handle (the left edge)
-      const rect = card.getBoundingClientRect();
-      const dragHandleWidth = 15; // Width of the drag handle
-      if (e.clientX - rect.left > dragHandleWidth) {
-        e.preventDefault();
-        return false;
-      }
-      
       e.stopPropagation();
       card.classList.add('dragging');
-      e.dataTransfer.setData('text/plain', note.id.toString());
-      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', note.id);
     });
 
     card.addEventListener('dragend', (e) => {
@@ -2379,16 +2513,30 @@ function createNoteCard(note) {
       
       const draggingCard = document.querySelector('.note-card.dragging');
       if (draggingCard && draggingCard !== card) {
-        const cardRect = card.getBoundingClientRect();
-        const dragY = e.clientY;
-        const threshold = cardRect.top + cardRect.height / 2;
-        
+        const container = card.parentElement;
+        if (!container) return;
+
+        const rect = card.getBoundingClientRect();
+        const threshold = rect.top + rect.height / 2;
+
+        // Удаляем предыдущие индикаторы
         document.querySelectorAll('.note-card.pinned').forEach(note => {
-          note.classList.remove('drag-over');
+          note.classList.remove('drag-over-top');
+          note.classList.remove('drag-over-bottom');
         });
-        
-        if (dragY < threshold) {
-          card.classList.add('drag-over');
+
+        // Добавляем визуальный индикатор
+        if (e.clientY < threshold) {
+          card.classList.add('drag-over-top');
+        } else {
+          card.classList.add('drag-over-bottom');
+        }
+
+        // Определяем позицию для вставки
+        if (e.clientY < threshold) {
+          container.insertBefore(draggingCard, card);
+        } else {
+          container.insertBefore(draggingCard, card.nextSibling);
         }
       }
     });
@@ -2397,38 +2545,21 @@ function createNoteCard(note) {
       e.preventDefault();
       e.stopPropagation();
       
-      const draggedNoteId = Number(e.dataTransfer.getData('text/plain'));
-      const targetNoteId = Number(note.id);
+      const container = card.parentElement;
+      if (!container) return;
+
+      // Получаем все карточки в текущем порядке после перетаскивания
+      const cards = [...container.querySelectorAll('.note-card.pinned')];
+      const currentOrder = cards.map(card => Number(card.dataset.noteId));
       
-      if (draggedNoteId !== targetNoteId) {
-        const pinnedContainer = document.querySelector('.pinned-notes-container');
-        const cards = [...pinnedContainer.querySelectorAll('.note-card.pinned')];
-        
-        const currentOrder = cards.map(card => Number(card.dataset.noteId));
-        const draggedIndex = currentOrder.indexOf(draggedNoteId);
-        const targetIndex = currentOrder.indexOf(targetNoteId);
-        
-        if (draggedIndex !== -1 && targetIndex !== -1) {
-          const cardRect = card.getBoundingClientRect();
-          const dropY = e.clientY;
-          const threshold = cardRect.top + cardRect.height / 2;
-          
-          let newIndex = targetIndex;
-          if (dropY > threshold) {
-            newIndex++;
-          }
-          
-          currentOrder.splice(draggedIndex, 1);
-          currentOrder.splice(newIndex, 0, draggedNoteId);
-          
-          try {
-            await notesDB.updateNotesOrder(currentOrder);
-            await loadNotes();
-          } catch (error) {
-            console.error('Error updating notes order:', error);
-            showNotification('Error updating notes order', true);
-          }
-        }
+      try {
+        // Обновляем порядок в базе данных
+        await notesDB.updateNotesOrder(currentOrder);
+        // Перезагружаем заметки для обновления отображения
+        await loadNotes();
+      } catch (error) {
+        console.error('Error updating notes order:', error);
+        showNotification('Error updating notes order', true);
       }
       
       document.querySelectorAll('.note-card.pinned').forEach(note => {
@@ -2465,6 +2596,16 @@ function createNoteCard(note) {
   pinButton.onclick = async (e) => {
     e.stopPropagation();
     try {
+      // Check if we're trying to pin and if we've reached the limit
+      if (!note.pinned) {
+        const notes = await notesDB.getAllNotes();
+        const pinnedCount = notes.filter(n => n.pinned).length;
+        if (pinnedCount >= 10) {
+          showNotification('Maximum number of pinned items (10) reached! 📌', true);
+          return;
+        }
+      }
+
       await notesDB.toggleNotePinned(note.id);
       await loadNotes();
       showNotification(note.pinned ? 'Note unpinned' : 'Note pinned');
@@ -2682,6 +2823,37 @@ document.addEventListener('keydown', (e) => {
       closeViewNoteModal();
     }
   }
+  
+  // Handle Ctrl+Enter to save changes in any open modal
+  if (e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    
+    // Check which modal is open and trigger its save button
+    const editModal = document.getElementById('editModal');
+    const addPromptModal = document.getElementById('addPromptModal');
+    const editFavoriteModal = document.getElementById('editFavoriteModal');
+    const noteModal = document.getElementById('noteModal');
+    const settingsModal = document.getElementById('settingsModal');
+    
+    if (editModal && editModal.style.display === 'block') {
+      // Trigger Save Changes button in Edit Prompt modal
+      document.getElementById('saveEdit')?.click();
+    } else if (addPromptModal && addPromptModal.style.display === 'block') {
+      // Trigger Save Prompt button in Add Prompt modal
+      document.getElementById('savePrompt')?.click();
+    } else if (editFavoriteModal && editFavoriteModal.style.display === 'block') {
+      // Trigger Save Changes button in Edit Favorite modal
+      document.getElementById('saveFavoriteEdit')?.click();
+    } else if (noteModal && noteModal.style.display === 'block') {
+      // For note modal, save the content
+      saveNoteContent().then(() => {
+        closeNoteModal(e);
+      });
+    } else if (settingsModal && settingsModal.style.display === 'block') {
+      // Trigger Save Settings button in Settings modal
+      document.getElementById('saveSettingsBtn')?.click();
+    }
+  }
 });
 
 function filterNotes(searchText) {
@@ -2708,15 +2880,24 @@ async function saveNoteContent() {
 
   try {
     isSaving = true;
-    const note = {
-      content: content,
-      date: new Date().toISOString()
-    };
     
     if (currentNoteId) {
-      note.id = currentNoteId;
+      // Получаем существующую заметку, чтобы сохранить её свойства
+      const existingNote = await notesDB.getNote(currentNoteId);
+      const note = {
+        id: currentNoteId,
+        content: content,
+        date: new Date().toISOString(),
+        pinned: existingNote ? existingNote.pinned : false,
+        order: existingNote ? existingNote.order : undefined
+      };
       await notesDB.updateNote(note);
     } else {
+      const note = {
+        content: content,
+        date: new Date().toISOString(),
+        pinned: false
+      };
       const savedNote = await notesDB.addNote(note);
       currentNoteId = savedNote.id;
     }
@@ -3159,7 +3340,7 @@ async function initSettingsModal() {
       showNotification('Description generated successfully! ✨');
     } catch (error) {
       console.error('Error generating description:', error);
-      showNotification(`Error generating description: ${error.message} ❌`, true);
+      showNotification(`Error generating description: ${error.message || 'Failed to generate description'} ❌\nTry using a different model or check your API settings.`, true);
     } finally {
       const generateBtn = document.getElementById('generateDescriptionBtn');
       generateBtn.disabled = false;
@@ -3315,6 +3496,63 @@ async function initSettingsModal() {
       hideModal('settingsModal');
     }
   });
+
+  // Setup AI title generation
+  document.getElementById('generateTitleBtn')?.addEventListener('click', async () => {
+    try {
+      if (!currentEditingFavorite) {
+        throw new Error('No favorite being edited');
+      }
+
+      const settings = await loadSettings();
+      if (!settings.apiKeys[settings.provider] || !settings.model) {
+        showNotification('Please configure API settings first! ⚙️', true);
+        return;
+      }
+
+      const generateBtn = document.getElementById('generateTitleBtn');
+      generateBtn.disabled = true;
+      generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 4V2C6.48 2 2 6.48 2 12h2c0-4.41 3.59-8 8-8zm6 2h-2c0 3.31-2.69 6-6 6s-6-2.69-6-6H4c0 4.41 3.59 8 8 8s8-3.59 8-8zm-6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>';
+
+      // Get chat history text
+      const chatHistory = currentEditingFavorite.messages
+        ?.map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n\n') || '';
+
+      if (!chatHistory) {
+        throw new Error('No chat history available');
+      }
+
+      // Prepare the prompt
+      const prompt = `${settings.titlePrompt}\n\nChat History:\n${chatHistory}`;
+
+      // Call the AI API
+      const response = await chrome.runtime.sendMessage({
+        type: 'GENERATE_TEXT',
+        prompt: prompt,
+        provider: settings.provider,
+        model: settings.model,
+        apiKey: settings.apiKeys[settings.provider]
+      });
+
+      if (response.status === 'error') {
+        throw new Error(response.error);
+      }
+
+      // Update the title field
+      const titleInput = document.getElementById('editFavoriteTitle');
+      titleInput.value = response.text.trim();
+
+      showNotification('Title generated successfully! ✨');
+    } catch (error) {
+      console.error('Error generating title:', error);
+      showNotification(`Error generating title: ${error.message || 'Failed to generate title'} ❌\nTry using a different model or check your API settings.`, true);
+    } finally {
+      const generateBtn = document.getElementById('generateTitleBtn');
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
+    }
+  });
 }
 
 // Function to get combined tag frequencies from both favorites and prompts
@@ -3322,17 +3560,15 @@ async function getCombinedTagFrequencies(type = 'all') {
   try {
     let items = [];
     
-    if (type === 'all' || type === 'favorites') {
+    if (type === 'favorites') {
       const favoritesResponse = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
       if (favoritesResponse && favoritesResponse.status === 'ok') {
-        items = items.concat(favoritesResponse.favorites || []);
+        items = favoritesResponse.favorites || [];
       }
-    }
-    
-    if (type === 'all' || type === 'prompts') {
+    } else if (type === 'prompts') {
       const promptsResponse = await chrome.runtime.sendMessage({ type: 'GET_PROMPTS' });
       if (promptsResponse && promptsResponse.status === 'ok') {
-        items = items.concat(promptsResponse.prompts || []);
+        items = promptsResponse.prompts || [];
       }
     }
     
@@ -3788,4 +4024,170 @@ async function initDatabases() {
     throw error;
   }
 }
+
+// Add updateNotesOrder function to notesDB
+notesDB.updateNotesOrder = async function(orderedIds) {
+  try {
+    const notes = await this.getAllNotes();
+    const pinnedNotes = notes.filter(note => note.pinned);
+    
+    // Update order for each pinned note
+    for (let i = 0; i < orderedIds.length; i++) {
+      const noteId = orderedIds[i];
+      const note = pinnedNotes.find(n => n.id === noteId);
+      if (note) {
+        note.order = i;
+        await this.updateNote(note);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating notes order:', error);
+    throw error;
+  }
+};
+
+// Add getNote method to notesDB
+notesDB.getNote = async function(id) {
+  try {
+    const notes = await this.getAllNotes();
+    return notes.find(note => note.id === id) || null;
+  } catch (error) {
+    console.error('Error getting note:', error);
+    throw error;
+  }
+};
+
+// Add this function after the existing functions
+async function generateTagsWithAI(favorite) {
+  const generateBtn = document.getElementById('generateTagsBtn');
+  try {
+    // Get current settings
+    const settings = await loadSettings();
+    if (!settings || !settings.apiKeys[settings.provider] || !settings.model) {
+      showNotification('Please configure API settings first! ⚙️', true);
+      return;
+    }
+
+    // Disable button and show loading state
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = '<svg class="ai-icon spinning" viewBox="0 0 24 24" width="16" height="16"><path d="M12 4V2C6.48 2 2 6.48 2 12h2c0-4.41 3.59-8 8-8zm6 2h-2c0 3.31-2.69 6-6 6s-6-2.69-6-6H4c0 4.41 3.59 8 8 8s8-3.59 8-8zm-6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>';
+
+    // Get chat history text
+    const chatHistory = favorite.messages
+      ?.map(msg => `${msg.role}: ${msg.content}`)
+      .join('\n\n') || '';
+
+    if (!chatHistory) {
+      throw new Error('No chat history available');
+    }
+
+    // Use the tags prompt template from settings
+    const prompt = `${settings.tagsPrompt || 'Generate 3-5 relevant tags for this content, separated by commas.'}\n\nChat History:\n${chatHistory}`;
+
+    // Call the AI API
+    const response = await chrome.runtime.sendMessage({
+      type: 'GENERATE_TAGS',
+      prompt: prompt,
+      settings: {
+        provider: settings.provider,
+        apiKey: settings.apiKeys[settings.provider],
+        model: settings.model
+      }
+    });
+
+    if (response.status === 'error') {
+      throw new Error(response.error);
+    }
+
+    // Clear existing tags
+    const tagsContainer = document.getElementById('editFavoriteTags');
+    const existingTags = tagsContainer.querySelectorAll('.tag');
+    
+    // Get special tags that we want to preserve
+    const specialTags = ['deepseek', 'gemini', 'chatgpt'];
+    const preservedTags = Array.from(existingTags)
+      .map(tag => tag.textContent.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase())
+      .filter(tag => specialTags.includes(tag));
+
+    // Clear existing tags
+    existingTags.forEach(tag => tag.remove());
+
+    // Split tags by commas and spaces and clean them
+    const tagsList = response.tags
+      .split(/[,\s]+/) // Split by commas and/or spaces
+      .map(tag => tag.trim().toLowerCase())
+      .filter(tag => tag && tag.length > 0); // Remove empty tags
+
+    // Combine preserved tags with new tags, removing duplicates
+    const allTags = [...new Set([...preservedTags, ...tagsList])];
+
+    // Add each tag as a separate element
+    allTags.forEach(tag => {
+      if (tag) {
+        const tagElement = document.createElement('span');
+        tagElement.className = 'tag';
+        tagElement.textContent = tag;
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'tag-remove';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => tagElement.remove();
+        
+        tagElement.appendChild(removeBtn);
+        tagsContainer.insertBefore(tagElement, tagsContainer.querySelector('input'));
+      }
+    });
+
+    // Update the tags manager with new tags
+    if (currentEditFavoriteTagsManager) {
+      currentEditFavoriteTagsManager.setTags(allTags);
+    } else {
+      currentEditFavoriteTagsManager = setupTagsInput(tagsContainer);
+      if (currentEditFavoriteTagsManager) {
+        currentEditFavoriteTagsManager.setTags(allTags);
+      }
+    }
+
+    // Update the favorite object with new tags
+    if (currentEditingFavorite) {
+      currentEditingFavorite.tags = allTags;
+      currentEditingFavorite.edited = new Date();
+    }
+
+    showNotification('Tags generated successfully! 🏷️');
+  } catch (error) {
+    console.error('Error generating tags:', error);
+    showNotification(`Error generating tags: ${error.message} ❌`, true);
+  } finally {
+    // Restore button state
+    generateBtn.disabled = false;
+    generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
+  }
+}
+
+// Add event listener for the generate tags button
+document.addEventListener('DOMContentLoaded', () => {
+  const generateTagsBtn = document.getElementById('generateTagsBtn');
+  if (generateTagsBtn) {
+    generateTagsBtn.addEventListener('click', async () => {
+      const favoriteId = document.getElementById('editFavoriteModal').dataset.favoriteId;
+      if (!favoriteId) {
+        showNotification('No favorite selected! ❌', true);
+        return;
+      }
+
+      const favorites = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+      if (favorites.status === 'ok') {
+        const favorite = favorites.favorites.find(f => f.id === favoriteId);
+        if (favorite) {
+          await generateTagsWithAI(favorite);
+        } else {
+          showNotification('Favorite not found! ❌', true);
+        }
+      }
+    });
+  }
+});
 

@@ -513,6 +513,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     
+    // Handle generate tags message
+    if (message.type === 'GENERATE_TAGS') {
+      handleTagGeneration(message.prompt, message.settings)
+        .then(sendResponse)
+        .catch(error => sendResponse({ status: 'error', error: error.message }));
+      return true; // Will respond asynchronously
+    }
+    
     // Unknown message type
     console.warn('Unknown message type:', message.type);
     sendResponse({ status: 'error', error: 'Unknown message type' });
@@ -618,31 +626,142 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Function to generate text using AI API
 async function generateText(message) {
   const { provider, model, apiKey, prompt } = message;
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY = 1000; // 1 second
 
   if (!apiKey || !model) {
     throw new Error('API key and model are required');
   }
 
+  async function makeRequest(retryCount = 0) {
+    try {
+      let response;
+      if (provider === 'openrouter') {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': chrome.runtime.getURL(''),
+            'X-Title': 'DeepSeek Magic'
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 500
+          })
+        });
+      } else if (provider === 'google') {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 500
+            }
+          })
+        });
+      } else {
+        throw new Error('Unsupported provider');
+      }
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'Failed to generate text');
+      }
+
+      const data = await response.json();
+      let generatedText;
+
+      if (provider === 'openrouter') {
+        generatedText = data.choices[0].message.content;
+      } else if (provider === 'google') {
+        // Check if we only got metadata without actual response
+        if (!data.candidates || data.candidates.length === 0) {
+          if (retryCount < MAX_RETRIES) {
+            console.log(`No candidates in response, retrying (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1))); // Увеличиваем задержку с каждой попыткой
+            return makeRequest(retryCount + 1);
+          }
+          throw new Error('No response candidates received after retries');
+        }
+
+        const candidate = data.candidates[0];
+        
+        // Try to extract text from all possible locations
+        generatedText = 
+          (candidate.content?.parts?.[0]?.text) ||
+          (candidate.parts?.[0]?.text) ||
+          (candidate.text) ||
+          (candidate.output);
+
+        if (!generatedText && typeof candidate === 'object') {
+          // Для случаев с нестандартной структурой ответа
+          const possibleTextLocations = [
+            candidate.content?.text,
+            candidate.response?.text,
+            candidate.generated_text,
+            candidate.result
+          ];
+          
+          generatedText = possibleTextLocations.find(text => text);
+        }
+
+        if (!generatedText) {
+          console.error('Response structure:', JSON.stringify(data, null, 2));
+          if (retryCount < MAX_RETRIES) {
+            console.log(`No text found in response, retrying (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)));
+            return makeRequest(retryCount + 1);
+          }
+          throw new Error('Could not extract text from response after retries');
+        }
+      }
+
+      return {
+        status: 'ok',
+        text: generatedText
+      };
+    } catch (error) {
+      if (retryCount < MAX_RETRIES) {
+        console.error(`Error on attempt ${retryCount + 1}:`, error);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        return makeRequest(retryCount + 1);
+      }
+      throw error;
+    }
+  }
+
+  return makeRequest();
+}
+
+// Add this function to handle tag generation
+async function handleTagGeneration(prompt, settings) {
   try {
     let response;
-    if (provider === 'openrouter') {
+    if (settings.provider === 'openrouter') {
       response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${settings.apiKey}`,
           'HTTP-Referer': chrome.runtime.getURL(''),
           'X-Title': 'DeepSeek Magic'
         },
         body: JSON.stringify({
-          model: model,
+          model: settings.model,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.7,
-          max_tokens: 500
+          max_tokens: 100
         })
       });
-    } else if (provider === 'google') {
-      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    } else if (settings.provider === 'google') {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -651,7 +770,7 @@ async function generateText(message) {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 500
+            maxOutputTokens: 100
           }
         })
       });
@@ -660,25 +779,29 @@ async function generateText(message) {
     }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Failed to generate text');
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || `API request failed: ${response.statusText}`);
     }
 
     const data = await response.json();
-    let generatedText;
-
-    if (provider === 'openrouter') {
-      generatedText = data.choices[0].message.content;
-    } else if (provider === 'google') {
-      generatedText = data.candidates[0].content.parts[0].text;
+    let tags;
+    
+    if (settings.provider === 'openrouter') {
+      tags = data.choices[0].message.content.trim();
+    } else if (settings.provider === 'google') {
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        throw new Error('Invalid response format from Google AI');
+      }
+      tags = data.candidates[0].content.parts[0].text.trim();
     }
 
-    return {
-      status: 'ok',
-      text: generatedText
-    };
+    if (!tags) {
+      throw new Error('No tags generated');
+    }
+
+    return { status: 'ok', tags };
   } catch (error) {
-    console.error('Error generating text:', error);
-    throw error;
+    console.error('Error generating tags:', error);
+    return { status: 'error', error: error.message };
   }
 } 

@@ -1030,8 +1030,12 @@ button.tag-remove,
   opacity: 0.7;
   transition: all 0.2s ease;
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
+/* Add styles for the count in tabs */
 .tab-btn::after {
   content: '';
   position: absolute;
@@ -1067,8 +1071,8 @@ button.tag-remove,
 
 /* Favorites styles */
 .favorites-list {
-  margin-top: 16px;
-  padding: 10px;
+  margin-top: 4px;
+  padding: 1px;
 }
 
 .pinned-favorites-container {
@@ -1798,6 +1802,25 @@ button.tag-remove,
 }
 
 .note-card.pinned::before:hover {
+  opacity: 1;
+}
+
+.note-card.dragging {
+  opacity: 0.5;
+  cursor: move;
+}
+
+.note-card.drag-over-top {
+  border-top: 2px solid var(--link-color);
+  margin-top: -1px;
+}
+
+.note-card.drag-over-bottom {
+  border-bottom: 2px solid var(--link-color);
+  margin-bottom: -1px;
+}
+
+.note-card.pinned.dragging::before {
   opacity: 1;
 }
 
@@ -2533,8 +2556,12 @@ button.tag-remove,
   opacity: 0.7;
   transition: all 0.2s ease;
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
+/* Add styles for the count in tabs */
 .tab-btn::after {
   content: '';
   position: absolute;
@@ -2568,11 +2595,11 @@ button.tag-remove,
   transform: translateY(0);
 }
 
-/* Favorites styles */
+/* Favorites styles 
 .favorites-list {
-  margin-top: 16px;
+  margin-top: 4px;
   padding: 10px;
-}
+}*/
 
 .pinned-favorites-container {
   margin-bottom: 26px;  /* Отступ между группами избранных чатов */
@@ -2814,7 +2841,7 @@ button.tag-remove,
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   padding: 0 4px;
 }
 
@@ -3086,4 +3113,13 @@ button.tag-remove,
 
 [data-theme="dark"] .favorite-description a {
   color: var(--link-color-dark);
+}
+
+.ai-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

@@ -27,7 +27,7 @@
 
   <div class="tab-content active" id="favorites-tab">
     <div class="search-box">
-      <input type="text" id="favoritesSearchInput" class="search-input" placeholder="Search favorite chats...">
+      <input type="text" id="favoritesSearchInput" class="search-input" placeholder="Search by text or use #tag for tag search...">
     </div>
     <div id="favoriteFrequentTags" class="frequent-tags-container">
       <!-- Frequent tags will be displayed here -->
@@ -126,7 +126,14 @@
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label for="editFavoriteTitle">Title</label>
+          <label for="editFavoriteTitle">
+            Title
+            <button id="generateTitleBtn" class="ai-generate-btn" title="Generate Title with AI">
+              <svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+            </button>
+          </label>
           <input type="text" id="editFavoriteTitle" placeholder="Enter favorite title">
         </div>
         <div class="form-group">
@@ -141,7 +148,14 @@
           <textarea id="editFavoriteDescription" class="prompt-input" placeholder="Enter description"></textarea>
         </div>
         <div class="form-group">
-          <label for="editFavoriteTags">Tags (press Enter to add)</label>
+          <label for="editFavoriteTags">
+            Tags (press Enter to add)
+            <button id="generateTagsBtn" class="ai-generate-btn" title="Generate Tags with AI">
+              <svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+            </button>
+          </label>
           <div class="tags-input" id="editFavoriteTags">
             <input type="text" placeholder="Add tags...">
           </div>

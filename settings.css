@@ -42,10 +42,20 @@
 #settingsModal .modal-body {
   max-height: calc(72vh - 130px); /* Reduced from 90vh by 20% */
   overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  -webkit-mask-image: none; /* Remove webkit mask */
+  mask-image: none; /* Remove mask */
 }
 
 #settingsModal .modal-footer {
   justify-content: space-between;
+}
+
+#settingsModal .modal-footer .btn {
+  display: none;
 }
 
 /* Settings Modal Styles */
@@ -55,16 +65,7 @@
   max-height: 72vh; /* Reduced from 90vh by 20% */
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-  overflow: hidden;
-}
-
-#settingsModal .modal-body {
-  max-height: calc(72vh - 130px); /* Reduced from 90vh by 20% */
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 16px;
-  width: 100%;
-  box-sizing: border-box;
+  overflow: visible; /* Change from hidden to visible */
 }
 
 .settings-form {
@@ -141,6 +142,11 @@
   border-color: var(--link-color);
   box-shadow: 0 0 0 3px var(--focus-shadow-color);
   outline: none;
+}
+
+.settings-textarea {
+  min-height: 120px; /* Add minimum height for textareas */
+  resize: vertical; /* Allow vertical resizing */
 }
 
 /* Frequent Tags Container Styles */
