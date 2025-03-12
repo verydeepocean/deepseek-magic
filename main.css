@@ -67,7 +67,8 @@
   --btn-hover-bg: #495057;
   --btn-hover-border: #6c757d;
   --description-color: #adb5bd;
-  --link-hover-color: #6ea8fe;
+  --link-color: #82b4ff;
+  --link-hover-color: #a8ccff;
   --focus-shadow-color: rgba(13, 110, 253, 0.25);
   --modal-shadow-color: rgba(0, 0, 0, 0.3);
 }
@@ -1899,6 +1900,26 @@ button.tag-remove,
   -webkit-line-clamp: 4;
   line-clamp: 4;
   -webkit-box-orient: vertical;
+}
+
+/* Add specific styles for links in note cards */
+.note-card-content a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+.note-card-content a:hover {
+  text-decoration: underline;
+}
+
+[data-theme="dark"] .note-card-content a,
+.deepseek-extension-root[data-theme="dark"] .note-card-content a {
+  color: #99ccff;  /* Более яркий и заметный синий цвет для ссылок */
+}
+
+[data-theme="dark"] .note-card-content a:hover,
+.deepseek-extension-root[data-theme="dark"] .note-card-content a:hover {
+  color: #b3d9ff;  /* Еще более светлый оттенок при наведении */
 }
 
 .note-card-actions {
