@@ -427,7 +427,7 @@ body::-webkit-scrollbar-thumb {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 8px 0;
+  margin: 5px 0;
 }
 
 .prompt-item .tag {
@@ -452,6 +452,19 @@ body::-webkit-scrollbar-thumb {
   margin: 0 0 8px;
   color: var(--text-color);
   line-height: 1.4;
+  font-size: 14px;
+}
+
+.prompt-item.pinned p {
+  border: 2px solid var(--border-color);
+  border-style: dashed;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .prompt-item.pinned p,
+.deepseek-extension-root[data-theme="dark"] .prompt-item.pinned p {
+  border-color: #6c757d;
 }
 
 .prompt-item small {
@@ -526,23 +539,26 @@ body::-webkit-scrollbar-thumb {
   opacity: 1;
 }
 
+/* Chat history modal styles */
 .chat-history-modal {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%) scale(0.9);
   background: var(--bg-color);
-  padding: 20px;
+  padding: 12px;
+  padding-bottom: 20px; /* Увеличиваем отступ снизу */
   border-radius: 8px;
   box-shadow: 0 4px 12px var(--modal-shadow-color);
-  width: 90%;
-  max-width: 800px;
-  max-height: 90vh;
+  width: 95%; /* Увеличено с 90% до 95% */
+  max-width: 1000px; /* Увеличено с 800px до 1000px */
+  max-height: 95vh; /* Увеличено с 90vh до 95vh */
   opacity: 0;
   transition: all 0.3s ease;
   z-index: 1001;
   display: flex;
   flex-direction: column;
+  overflow: hidden; 
 }
 
 .chat-history-modal.show {
@@ -550,15 +566,284 @@ body::-webkit-scrollbar-thumb {
   transform: translate(-50%, -50%) scale(1);
 }
 
+.chat-history-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px; /* Уменьшаем с 8px до 6px */
+  flex-shrink: 0;
+}
+
+.chat-history-modal .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-history-modal #generateSummaryBtn {
+  font-size: 12px;
+  padding: 5px 10px;
+  height: auto;
+}
+
+.chat-history-modal .modal-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Важно для корректной работы flex */
+  height: calc(100% - 88px); /* Уменьшаем вычитаемую высоту на 20% (было 110px) */
+}
+
+.chat-history-modal .modal-footer {
+  margin-top: 5px; /* Уменьшаем с 20px до 10px */
+  padding-top: 14px; /* Уменьшаем с 10px до 8px */
+  padding-bottom: 2px; /* Уменьшаем с 8px до 5px */
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+}
+
+.chat-history-modal .modal-footer .btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  min-width: 80px;
+  height: 32px;
+  line-height: 1;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-history-modal .modal-footer .btn-primary {
+  background-color: var(--primary-color);
+  color: var(--primary-text-color);
+  border: 1px solid var(--primary-color);
+}
+
+.chat-history-modal .modal-footer .btn:not(.btn-primary) {
+  background-color: var(--bg-secondary);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+/* Summary container styles */
+.summary-container {
+  margin: 0 15px 15px 15px;
+  padding: 10px 15px;
+  background-color: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px dashed #adb5bd;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.summary-container::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.summary-container::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.summary-container::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 3px;
+}
+
+.summary-container::-webkit-scrollbar-thumb:hover {
+  background-color: var(--btn-hover-border);
+}
+
+.summary-content {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-color);
+  white-space: pre-wrap;
+}
+
+/* Стили для HTML-элементов внутри summary-content */
+.summary-content p {
+  margin: 0 0 6px;
+}
+
+.summary-content p:last-child {
+  margin-bottom: 0;
+}
+
+.summary-content ul, 
+.summary-content ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.summary-content ul {
+  list-style-type: disc;
+}
+
+.summary-content ul ul {
+  list-style-type: circle;
+}
+
+.summary-content ul ul ul {
+  list-style-type: square;
+}
+
+.summary-content ol {
+  list-style-type: decimal;
+}
+
+.summary-content ol ol {
+  list-style-type: lower-alpha;
+}
+
+.summary-content ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.summary-content li {
+  margin-bottom: 3px;
+}
+
+.summary-content li:last-child {
+  margin-bottom: 0;
+}
+
+.summary-content code {
+  font-family: monospace;
+  background-color: var(--code-bg-color);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--code-color);
+}
+
+.summary-content pre {
+  background-color: var(--code-bg-color);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 6px 0;
+  font-size: 11px;
+}
+
+.summary-content a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+.summary-content a:hover {
+  text-decoration: underline;
+}
+
+.summary-content strong {
+  font-weight: 600;
+}
+
+.summary-content em {
+  font-style: italic;
+}
+
 .chat-history-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-  margin: 16px 0;
+  padding: 10px;
+  padding-bottom: 15px;
+  margin: 0;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   background: var(--bg-color);
-  max-height: calc(80vh - 140px);
+  min-height: 0;
+  height: 100%;
+  font-size: 14px !important; 
+  line-height: 1.5;
+  color: var(--text-color);
+}
+
+/* Override message content font size */
+.chat-history-content .message-content {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+/* Override message header font size */
+.chat-history-content .message-header {
+  font-size: 14px !important;
+  font-weight: 600;
+}
+
+/* Ensure all text elements inside chat history inherit the font size */
+.chat-history-content p,
+.chat-history-content li,
+.chat-history-content div {
+  font-size: inherit;
+}
+
+/* Adjust code font size relative to content */
+.chat-history-content code,
+.chat-history-content pre {
+  font-size: 14px !important;
+}
+
+/* Добавляем стили для скроллбара в контенте чата */
+.chat-history-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.chat-history-content::-webkit-scrollbar-track {
+  background: var(--bg-color);
+  border-radius: 4px;
+}
+
+.chat-history-content::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+
+.chat-history-content::-webkit-scrollbar-thumb:hover {
+  background-color: var(--btn-hover-border);
+}
+
+.chat-history-content::-webkit-scrollbar-corner {
+  background-color: var(--bg-color);
+}
+
+/* Стили для сообщений в истории чата */
+.chat-message {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.chat-message.user {
+  background-color: var(--user-message-bg);
+  border-color: var(--user-message-border);
+}
+
+.chat-message.assistant {
+  background-color: var(--assistant-message-bg);
+  border-color: var(--assistant-message-border);
+}
+
+.message-header {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--header-color);
+  font-size: 13px;
+}
+
+.message-content {
+  color: var(--text-color);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Добавляем стили для скроллбара в контенте чата */
@@ -1384,9 +1669,49 @@ button.tag-remove,
 }
 
 .message-content code {
-  max-width: 100%;
-  word-break: break-all;
-  white-space: pre-wrap;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  background-color: var(--code-bg-color);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+  color: var(--code-color);
+  letter-spacing: 0;
+  text-rendering: auto;
+}
+
+.message-content pre {
+  background-color: var(--code-bg-color);
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 1px solid var(--border-color);
+}
+
+.message-content pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  display: block;
+}
+
+.message-content p {
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content strong {
+  font-weight: 600;
+}
+
+.message-content em {
+  font-style: italic;
 }
 
 .message-content code.inline-code {
@@ -1422,8 +1747,8 @@ button.tag-remove,
 
 .message-content ul, 
 .message-content ol {
-  margin: 0;
-  padding-left: 16px;
+  margin: 8px 0;
+  padding-left: 24px;
 }
 
 .message-content ul {
@@ -1432,7 +1757,7 @@ button.tag-remove,
 
 .message-content ul ul {
   list-style-type: circle;
-  margin: 0;
+  margin: 4px 0;
 }
 
 .message-content ul ul ul {
@@ -1445,7 +1770,7 @@ button.tag-remove,
 
 .message-content ol ol {
   list-style-type: lower-alpha;
-  margin: 0;
+  margin: 4px 0;
 }
 
 .message-content ol ol ol {
@@ -1453,18 +1778,8 @@ button.tag-remove,
 }
 
 .message-content li {
-  margin: 0;
-  padding: 0;
-  line-height: 1.1;
-}
-
-.message-content li > p {
-  margin: 0;
-  padding: 0;
-}
-
-.message-content li:first-child {
-  margin-top: 0;
+  margin-bottom: 4px;
+  line-height: 1.5;
 }
 
 .message-content li:last-child {
@@ -1508,13 +1823,12 @@ button.tag-remove,
 
 /* Блоки кода и цитаты */
 .message-content blockquote {
-  margin: 1.2em 0;
-  padding: 0.8em 1em 0.8em 1.2em;
+  margin: 8px 0;
+  padding: 8px 12px;
   border-left: 4px solid var(--border-color);
-  background: var(--btn-bg);
+  background-color: var(--blockquote-bg);
+  color: var(--blockquote-color);
   font-style: italic;
-  border-radius: 4px;
-  color: var(--description-color);
 }
 
 .message-content blockquote p {
@@ -1531,13 +1845,27 @@ button.tag-remove,
 
 /* Таблицы */
 .message-content table {
-  border-collapse: separate;
-  border-spacing: 0;
-  margin: 1.2em 0;
+  border-collapse: collapse;
   width: 100%;
-  border-radius: 8px;
+  margin: 10px 0;
+  overflow-x: auto;
+  display: block;
+}
+
+.message-content th,
+.message-content td {
   border: 1px solid var(--border-color);
-  font-size: 0.95em;
+  padding: 8px;
+  text-align: left;
+}
+
+.message-content th {
+  background-color: var(--table-header-bg);
+  font-weight: 600;
+}
+
+.message-content tr:nth-child(even) {
+  background-color: var(--table-row-alt-bg);
 }
 
 /* Добавляем обертку для таблицы с горизонтальной прокруткой */
@@ -1614,16 +1942,15 @@ button.tag-remove,
 
 /* Ссылки */
 .message-content a {
-  color: #0d6efd;
+  color: var(--link-color);
   text-decoration: none;
+  font-weight: 500;
   border-bottom: 1px solid transparent;
-  transition: all 0.2s ease;
-  padding-bottom: 1px;
+  transition: border-color 0.2s ease;
 }
 
 .message-content a:hover {
-  border-bottom-color: currentColor;
-  color: #0a58ca;
+  border-bottom-color: var(--link-color);
 }
 
 [data-theme="dark"] .message-content a,
@@ -1640,10 +1967,8 @@ button.tag-remove,
 .message-content img {
   max-width: 100%;
   height: auto;
-  border-radius: 8px;
-  margin: 1.2em 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  display: block;
+  border-radius: 4px;
+  margin: 8px 0;
 }
 
 .message-content img + em {
@@ -3132,6 +3457,27 @@ button.tag-remove,
   border-radius: 4px;
 }
 
+/* Highlight effect for updated descriptions */
+.favorite-description.highlight-update {
+  animation: highlight-pulse 1.5s ease-in-out;
+}
+
+@keyframes highlight-pulse {
+  0% { background-color: transparent; }
+  30% { background-color: rgba(255, 255, 0, 0.3); }
+  100% { background-color: transparent; }
+}
+
+[data-theme="dark"] .favorite-description.highlight-update {
+  animation: highlight-pulse-dark 1.5s ease-in-out;
+}
+
+@keyframes highlight-pulse-dark {
+  0% { background-color: transparent; }
+  30% { background-color: rgba(255, 255, 0, 0.15); }
+  100% { background-color: transparent; }
+}
+
 [data-theme="dark"] .favorite-description a {
   color: var(--link-color-dark);
 }
@@ -3143,4 +3489,176 @@ button.tag-remove,
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Добавляем стили для скроллбара в контенте чата */
+.chat-history-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.chat-history-content::-webkit-scrollbar-track {
+  background: var(--bg-color);
+  border-radius: 4px;
+}
+
+.chat-history-content::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+
+.chat-history-content::-webkit-scrollbar-thumb:hover {
+  background-color: var(--btn-hover-border);
+}
+
+.chat-history-content::-webkit-scrollbar-corner {
+  background-color: var(--bg-color);
+}
+
+/* Chat History Window (non-modal) */
+.chat-history-window {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 90%;
+  max-width: 1200px;
+  height: 90vh;
+  background: var(--bg-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px var(--modal-shadow-color);
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.chat-history-window.show {
+  display: flex;
+}
+
+.chat-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.chat-history-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.chat-history-header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-history-header .close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-color);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.chat-history-header .close-btn:hover {
+  opacity: 0.7;
+}
+
+.chat-history-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-history-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background-color: var(--bg-secondary);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+/* Reuse existing styles for the content */
+.chat-history-window .chat-history-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  min-height: 0;
+  height: 100%;
+  font-size: 14px !important;
+  line-height: 1.5;
+  color: var(--text-color);
+}
+
+/* Draggable handle */
+.chat-history-header {
+  cursor: move;
+}
+
+#chatHistoryModal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Стили для подсветки обновленного описания */
+@keyframes highlight-pulse {
+  0% { background-color: rgba(var(--accent-color-rgb), 0.1); }
+  50% { background-color: rgba(var(--accent-color-rgb), 0.3); }
+  100% { background-color: rgba(var(--accent-color-rgb), 0.1); }
+}
+
+.highlight-update {
+  animation: highlight-pulse 1.5s ease-in-out;
+  border-radius: 4px;
+}
+
+/* Обеспечиваем корректное отображение в темной теме */
+[data-theme="dark"] .highlight-update,
+.deepseek-extension-root[data-theme="dark"] .highlight-update {
+  animation: highlight-pulse 1.5s ease-in-out;
+}
+
+/* Добавляем переменную для RGB значения акцентного цвета */
+:root {
+  --accent-color-rgb: 66, 133, 244;
+}
+
+[data-theme="dark"] {
+  --accent-color-rgb: 92, 159, 247;
+}
+
+.deepseek-extension-root[data-theme="dark"] {
+  --accent-color-rgb: 92, 159, 247;
+}
+
+/* Highlight effect for updated tags */
+.prompt-tags.highlight-update {
+  animation: highlight-pulse 1.5s ease-in-out;
 }

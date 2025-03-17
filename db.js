@@ -46,8 +46,17 @@ class PromptDB {
   }
 
   async addPrompt(prompt) {
+    if (!this.db) {
+      console.log('PromptDB not initialized in addPrompt, initializing now...');
+      await this.init();
+      console.log('PromptDB initialized in addPrompt:', !!this.db);
+    }
+
     return new Promise((resolve, reject) => {
       try {
+        if (!this.db) {
+          throw new Error('Database is still null after initialization');
+        }
         const store = this.db
           .transaction(this.storeName, 'readwrite')
           .objectStore(this.storeName);
@@ -253,6 +262,61 @@ class FavoritesDB {
     });
   }
 
+  async updateFavorite(favorite) {
+    if (!this.db) {
+      console.log('FavoritesDB not initialized for updating, initializing now...');
+      await this.init();
+      console.log('FavoritesDB initialized for updating:', this.db ? 'success' : 'failed');
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        if (!this.db) {
+          throw new Error('FavoritesDB is still null after initialization');
+        }
+
+        console.log('Creating transaction for updating favorite...');
+        const transaction = this.db.transaction([this.storeName], 'readwrite');
+        if (!transaction) {
+          throw new Error('Failed to create transaction for updating favorite');
+        }
+
+        console.log('Getting store for updating favorite...');
+        const store = transaction.objectStore(this.storeName);
+        if (!store) {
+          throw new Error('Failed to get store for updating favorite');
+        }
+        
+        console.log('Updating favorite in database:', favorite);
+        const request = store.put(favorite);
+
+        request.onsuccess = () => {
+          console.log('Favorite updated successfully:', {
+            id: favorite.id,
+            data: favorite
+          });
+          resolve(favorite);
+        };
+
+        request.onerror = () => {
+          console.error('Error updating favorite:', request.error);
+          reject(request.error);
+        };
+
+        transaction.oncomplete = () => {
+          console.log('Update favorite transaction completed');
+        };
+
+        transaction.onerror = (error) => {
+          console.error('Update favorite transaction error:', error);
+        };
+      } catch (error) {
+        console.error('Error in updateFavorite:', error);
+        reject(error);
+      }
+    });
+  }
+
   async getFavorites() {
     console.log('Getting all favorites...');
     if (!this.db) {
@@ -412,10 +476,18 @@ class NotesDB {
   }
 
   async addNote(note) {
-    if (!this.db) await this.init();
+    if (!this.db) {
+      console.log('NotesDB not initialized in addNote, initializing now...');
+      await this.init();
+      console.log('NotesDB initialized in addNote:', !!this.db);
+    }
 
     return new Promise((resolve, reject) => {
       try {
+        if (!this.db) {
+          throw new Error('NotesDB is still null after initialization');
+        }
+        
         const transaction = this.db.transaction([this.storeName], 'readwrite');
         const store = transaction.objectStore(this.storeName);
         
@@ -429,7 +501,12 @@ class NotesDB {
 
         request.onsuccess = () => {
           console.log('Note added successfully:', noteWithDefaults);
-          resolve(noteWithDefaults);
+          // Update the note object with the generated ID
+          const savedNote = {
+            ...noteWithDefaults,
+            id: request.result
+          };
+          resolve(savedNote);
         };
 
         request.onerror = () => {
@@ -955,49 +1032,116 @@ class DataExporter {
           throw new Error('Failed to initialize databases for import');
         }
         
-        // Очищаем все базы данных перед импортом
-        console.log('Clearing all databases before import...');
-        try {
-          await Promise.all([
-            this.promptDB.clearAll(),
-            this.favoritesDB.clearAll(),
-            this.notesDB.clearAll()
-          ]);
-          console.log('All databases cleared successfully');
-            } catch (e) {
-          console.error('Error clearing databases:', e);
-          throw new Error('Failed to clear databases before import');
-        }
+        // Вместо очистки баз данных, получаем существующие данные и обновляем/добавляем только нужные
+        console.log('Starting smart import process...');
         
-        // Импортируем данные
+        // Обработка промптов
         if (Array.isArray(data.prompts) && data.prompts.length > 0) {
-          console.log(`Importing ${data.prompts.length} prompts...`);
+          console.log(`Processing ${data.prompts.length} prompts from import file...`);
+          
+          // Получаем существующие промпты
+          const existingPrompts = await this.promptDB.getAllPrompts();
+          console.log(`Found ${existingPrompts.length} existing prompts in database`);
+          
+          // Создаем карту существующих промптов по ID для быстрого поиска
+          const existingPromptsMap = new Map();
+          existingPrompts.forEach(prompt => {
+            existingPromptsMap.set(prompt.id, prompt);
+          });
+          
+          // Создаем карту импортируемых промптов по ID
+          const importPromptsMap = new Map();
+          data.prompts.forEach(prompt => {
+            importPromptsMap.set(prompt.id, prompt);
+          });
+          
+          // Обновляем или добавляем промпты из импорта
           for (const prompt of data.prompts) {
-            await this.promptDB.addPrompt(prompt);
+            if (existingPromptsMap.has(prompt.id)) {
+              await this.promptDB.updatePrompt(prompt);
+              console.log(`Updated existing prompt: ${prompt.id}`);
+            } else {
+              await this.promptDB.addPrompt(prompt);
+              console.log(`Added new prompt: ${prompt.id}`);
+            }
           }
+          
           console.log('Prompts imported successfully');
         }
         
+        // Обработка избранного
         if (Array.isArray(data.favorites) && data.favorites.length > 0) {
-          console.log(`Importing ${data.favorites.length} favorites...`);
+          console.log(`Processing ${data.favorites.length} favorites from import file...`);
+          
+          // Получаем существующие избранные
+          const existingFavorites = await this.favoritesDB.getFavorites();
+          console.log(`Found ${existingFavorites.length} existing favorites in database`);
+          
+          // Создаем карту существующих избранных по ID для быстрого поиска
+          const existingFavoritesMap = new Map();
+          existingFavorites.forEach(favorite => {
+            existingFavoritesMap.set(favorite.id, favorite);
+          });
+          
+          // Создаем карту импортируемых избранных по ID
+          const importFavoritesMap = new Map();
+          data.favorites.forEach(favorite => {
+            importFavoritesMap.set(favorite.id, favorite);
+          });
+          
+          // Обновляем или добавляем избранные из импорта
           for (const favorite of data.favorites) {
-            await this.favoritesDB.addFavorite(favorite);
+            if (existingFavoritesMap.has(favorite.id)) {
+              await this.favoritesDB.updateFavorite(favorite);
+              console.log(`Updated existing favorite: ${favorite.id}`);
+            } else {
+              await this.favoritesDB.addFavorite(favorite);
+              console.log(`Added new favorite: ${favorite.id}`);
+            }
           }
+          
           console.log('Favorites imported successfully');
         }
         
-      if (Array.isArray(data.notes) && data.notes.length > 0) {
-        console.log(`Importing ${data.notes.length} notes...`);
+        // Обработка заметок
+        if (Array.isArray(data.notes) && data.notes.length > 0) {
+          console.log(`Processing ${data.notes.length} notes from import file...`);
+          
+          // Получаем существующие заметки
+          const existingNotes = await this.notesDB.getAllNotes();
+          console.log(`Found ${existingNotes.length} existing notes in database`);
+          
+          // Создаем карту существующих заметок по ID для быстрого поиска
+          const existingNotesMap = new Map();
+          existingNotes.forEach(note => {
+            existingNotesMap.set(note.id, note);
+          });
+          
+          // Создаем карту импортируемых заметок по ID
+          const importNotesMap = new Map();
+          data.notes.forEach(note => {
+            importNotesMap.set(note.id, note);
+          });
+          
+          // Обновляем или добавляем заметки из импорта
           const batchSize = 50;
           for (let i = 0; i < data.notes.length; i += batchSize) {
             const batch = data.notes.slice(i, i + batchSize);
-            await Promise.all(batch.map(note => this.notesDB.addNote(note)));
+            await Promise.all(batch.map(note => {
+              if (existingNotesMap.has(note.id)) {
+                return this.notesDB.updateNote(note);
+              } else {
+                return this.notesDB.addNote(note);
+              }
+            }));
           }
+          
           console.log('Notes imported successfully');
-      }
-      
-      if (data.settings && typeof data.settings === 'object') {
-        console.log('Importing settings...');
+        }
+        
+        // Импорт настроек (настройки обычно заменяются полностью)
+        if (data.settings && typeof data.settings === 'object') {
+          console.log('Importing settings...');
           await this.saveSettings(data.settings);
           console.log('Settings imported successfully');
         }
@@ -1105,6 +1249,325 @@ class DataExporter {
         reject(error);
       }
     });
+  }
+
+  // Новый метод для жесткой очистки всех данных с перезагрузкой расширения
+  async hardClearAll() {
+    let tempDb = null;
+    try {
+      console.log('Starting hard clear all process...');
+      
+      // Удаляем существующую временную базу данных, если она есть
+      try {
+        await new Promise((resolve) => {
+          const deleteRequest = indexedDB.deleteDatabase('tempClearDB');
+          deleteRequest.onsuccess = () => {
+            console.log('Old temporary clear database deleted successfully');
+            resolve();
+          };
+          deleteRequest.onerror = () => {
+            console.log('No old temporary clear database to delete');
+            resolve();
+          };
+        });
+      } catch (e) {
+        console.log('Error deleting old clear database:', e);
+        // Продолжаем выполнение, так как это некритичная ошибка
+      }
+
+      // Создаем новую временную базу данных для флага очистки
+      console.log('Creating temporary clear database...');
+      tempDb = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('tempClearDB', 1);
+        
+        request.onerror = () => {
+          console.error('Error opening temporary clear database:', request.error);
+          reject(request.error);
+        };
+        
+        request.onblocked = () => {
+          console.error('Clear database blocked');
+          reject(new Error('Clear database blocked'));
+        };
+        
+        request.onupgradeneeded = (event) => {
+          console.log('Creating clear flag store...');
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('clearFlag')) {
+            db.createObjectStore('clearFlag');
+          }
+        };
+        
+        request.onsuccess = () => {
+          console.log('Temporary clear database created successfully');
+          resolve(request.result);
+        };
+      });
+
+      // Сохраняем флаг очистки
+      console.log('Setting clear flag...');
+      await new Promise((resolve, reject) => {
+        try {
+          const transaction = tempDb.transaction(['clearFlag'], 'readwrite');
+          
+          transaction.onerror = () => {
+            reject(new Error('Transaction failed: ' + transaction.error));
+          };
+          
+          transaction.oncomplete = () => {
+            console.log('Clear flag set successfully');
+            resolve();
+          };
+          
+          const store = transaction.objectStore('clearFlag');
+          const request = store.put(true, 'pendingClear');
+          
+          request.onerror = () => {
+            reject(new Error('Failed to set clear flag: ' + request.error));
+          };
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      // Закрываем базу данных
+      if (tempDb) {
+        tempDb.close();
+        tempDb = null;
+      }
+
+      // Ждем немного, чтобы убедиться, что флаг сохранился
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('Clear flag set successfully, reloading extension...');
+      chrome.runtime.reload();
+      
+      return true;
+    } catch (error) {
+      console.error('Error in hardClearAll:', error);
+      
+      // Пытаемся очистить временную базу данных в случае ошибки
+      if (tempDb) {
+        tempDb.close();
+      }
+      try {
+        await new Promise((resolve) => {
+          const deleteRequest = indexedDB.deleteDatabase('tempClearDB');
+          deleteRequest.onsuccess = resolve;
+          deleteRequest.onerror = resolve; // Продолжаем даже при ошибке
+        });
+      } catch (e) {
+        console.error('Error cleaning up temporary clear database:', e);
+      }
+      
+      throw error;
+    }
+  }
+
+  // Метод для проверки и обработки отложенной очистки после перезагрузки
+  async handlePendingClear() {
+    let tempDb = null;
+    let retryCount = 3;
+    
+    while (retryCount > 0) {
+      try {
+        console.log(`Checking for pending clear (attempt ${4 - retryCount}/3)...`);
+        
+        // Открываем временную базу данных
+        tempDb = await new Promise((resolve, reject) => {
+          const request = indexedDB.open('tempClearDB', 1);
+          
+          request.onerror = () => {
+            console.log('No pending clear found (database error)');
+            reject(request.error);
+          };
+          
+          request.onblocked = () => {
+            console.error('Clear database blocked');
+            reject(new Error('Clear database blocked'));
+          };
+          
+          request.onsuccess = () => {
+            console.log('Temporary clear database opened successfully');
+            resolve(request.result);
+          };
+        });
+
+        // Проверяем, существует ли хранилище clearFlag
+        if (!tempDb.objectStoreNames.contains('clearFlag')) {
+          console.log('No clear flag store found');
+          if (tempDb) {
+            tempDb.close();
+          }
+          return false;
+        }
+
+        // Получаем сохраненный флаг
+        const clearFlag = await new Promise((resolve, reject) => {
+          try {
+            const transaction = tempDb.transaction(['clearFlag'], 'readonly');
+            
+            transaction.onerror = () => {
+              reject(new Error('Transaction failed: ' + transaction.error));
+            };
+            
+            const store = transaction.objectStore('clearFlag');
+            const request = store.get('pendingClear');
+            
+            request.onerror = () => {
+              reject(new Error('Failed to get clear flag: ' + request.error));
+            };
+            
+            request.onsuccess = () => {
+              resolve(request.result);
+            };
+          } catch (error) {
+            reject(error);
+          }
+        });
+
+        if (!clearFlag) {
+          console.log('No pending clear flag found');
+          if (tempDb) {
+            tempDb.close();
+          }
+          return false;
+        }
+
+        console.log('Found pending clear flag, starting clear process...');
+        
+        // Закрываем базы данных перед очисткой, чтобы потом создать их заново
+        console.log('Closing databases before clearing...');
+        if (this.promptDB.db) {
+          this.promptDB.db.close();
+          this.promptDB.db = null;
+        }
+        if (this.favoritesDB.db) {
+          this.favoritesDB.db.close();
+          this.favoritesDB.db = null;
+        }
+        if (this.notesDB.db) {
+          this.notesDB.db.close();
+          this.notesDB.db = null;
+        }
+        
+        // Инициализируем все базы данных и ждем их готовности
+        console.log('Initializing databases for clear...');
+        await Promise.all([
+          this.promptDB.init(),
+          this.favoritesDB.init(),
+          this.notesDB.init()
+        ]);
+
+        // Очищаем все базы данных
+        console.log('Clearing all databases...');
+        await Promise.all([
+          this.promptDB.clearAll(),
+          this.favoritesDB.clearAll(),
+          this.notesDB.clearAll()
+        ]);
+
+        console.log('All databases cleared successfully');
+        
+        // Закрываем базы данных после очистки
+        console.log('Closing databases after clearing...');
+        if (this.promptDB.db) {
+          this.promptDB.db.close();
+          this.promptDB.db = null;
+        }
+        if (this.favoritesDB.db) {
+          this.favoritesDB.db.close();
+          this.favoritesDB.db = null;
+        }
+        if (this.notesDB.db) {
+          this.notesDB.db.close();
+          this.notesDB.db = null;
+        }
+
+        // Отправляем сообщение в фоновый скрипт о том, что данные были очищены
+        try {
+          await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
+          console.log('Sent CLEAR_ALL_DATA message to background script');
+        } catch (messageError) {
+          console.error('Error sending message to background script:', messageError);
+          // Продолжаем выполнение, так как это некритичная ошибка
+        }
+
+        // Показываем сообщение пользователю
+        try {
+          // Проверяем, определена ли функция showToast в глобальной области видимости
+          if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+            window.showToast('All data has been cleared successfully! 🗑️', 'success');
+          }
+        } catch (toastError) {
+          console.error('Error showing toast notification:', toastError);
+          // Продолжаем выполнение, так как это некритичная ошибка
+        }
+
+        // Удаляем временную базу данных
+        if (tempDb) {
+          tempDb.close();
+        }
+        
+        await new Promise((resolve) => {
+          const deleteRequest = indexedDB.deleteDatabase('tempClearDB');
+          deleteRequest.onsuccess = () => {
+            console.log('Temporary clear database deleted successfully');
+            resolve();
+          };
+          deleteRequest.onerror = () => {
+            console.error('Error deleting temporary clear database:', deleteRequest.error);
+            resolve(); // Продолжаем даже при ошибке
+          };
+        });
+
+        console.log('Clear process completed successfully');
+
+        // Reinitialize databases to make sure they're ready for use
+        console.log('Reinitializing databases after clearing...');
+        try {
+          await Promise.all([
+            this.promptDB.init(),
+            this.favoritesDB.init(),
+            this.notesDB.init()
+          ]);
+          console.log('All databases reinitialized successfully');
+        } catch (reinitError) {
+          console.error('Error reinitializing databases:', reinitError);
+          // Continue despite error - the app will try to initialize again when needed
+        }
+
+        return true;
+      } catch (error) {
+        console.error(`Error in handlePendingClear (attempt ${4 - retryCount}/3):`, error);
+        
+        // Закрываем базу данных при ошибке
+        if (tempDb) {
+          tempDb.close();
+          tempDb = null;
+        }
+        
+        // Уменьшаем счетчик попыток и ждем перед следующей попыткой
+        retryCount--;
+        if (retryCount > 0) {
+          console.log(`Retrying in 1 second... (${retryCount} attempts left)`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    
+    // Если все попытки не удались, пытаемся очистить временную базу данных
+    try {
+      await new Promise((resolve) => {
+        const deleteRequest = indexedDB.deleteDatabase('tempClearDB');
+        deleteRequest.onsuccess = resolve;
+        deleteRequest.onerror = resolve; // Продолжаем даже при ошибке
+      });
+    } catch (e) {
+      console.error('Error cleaning up temporary clear database:', e);
+    }
+    
+    return false;
   }
 }
 

@@ -1,5 +1,5 @@
 // Import database instances
-import { promptDB, favoritesDB, notesDB } from './db.js';
+import { promptDB, favoritesDB, notesDB, dataExporter } from './db.js';
 
 // Utility functions
 function debounce(func, delay) {
@@ -147,6 +147,10 @@ function createFavoriteElement(favorite) {
       ? favorite.description.substring(0, 200) + '...' 
       : favorite.description;
     description.innerHTML = sanitizeAndRenderHTML(truncatedDescription);
+    // Create temporary element to strip HTML tags for title
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = favorite.description;
+    description.title = tempDiv.textContent;
   }
   
   const tags = document.createElement('div');
@@ -245,38 +249,11 @@ function createFavoriteElement(favorite) {
     e.stopPropagation();
     console.log('History button clicked');
     
-    const modal = document.getElementById('chatHistoryModal');
-    const modalContent = document.getElementById('chatHistoryContent');
-    const updateButton = document.getElementById('updateChatBtn');
-    
-    // Clear previous content
-    modalContent.innerHTML = '';
-    
-    if (favorite.messages && favorite.messages.length > 0) {
-      favorite.messages.forEach(message => {
-        const messageElement = createMessageElement(message);
-        modalContent.appendChild(messageElement);
-      });
-      
-      // Add last updated info if available
-      if (favorite.metadata?.lastUpdated) {
-        const lastUpdated = document.createElement('div');
-        lastUpdated.className = 'last-updated';
-        lastUpdated.textContent = `Last updated: ${new Date(favorite.metadata.lastUpdated).toLocaleString()}`;
-        modalContent.appendChild(lastUpdated);
-      }
-    } else {
-      modalContent.textContent = 'No chat history available.';
-    }
-    
-    // Show modal
-    modal.style.display = 'block';
-    requestAnimationFrame(() => {
-      modal.classList.add('show');
-      modal.querySelector('.modal').classList.add('show');
-    });
+    // Use the showChatHistory function to display the chat history
+    showChatHistory(null, favorite);
     
     // Remove old event listener if exists
+    const updateButton = document.getElementById('updateChatBtn');
     const oldUpdateHandler = updateButton._updateHandler;
     if (oldUpdateHandler) {
       updateButton.removeEventListener('click', oldUpdateHandler);
@@ -355,18 +332,8 @@ function createFavoriteElement(favorite) {
           favorite: favorite
         });
 
-        // Refresh display
-        modalContent.innerHTML = '';
-        response.messages.forEach(message => {
-          const messageElement = createMessageElement(message);
-          modalContent.appendChild(messageElement);
-        });
-
-        // Update last updated info
-        const lastUpdated = document.createElement('div');
-        lastUpdated.className = 'last-updated';
-        lastUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
-        modalContent.appendChild(lastUpdated);
+        // Refresh display using showChatHistory
+        showChatHistory(null, favorite);
 
         showNotification('Chat history updated! 🔄');
 
@@ -429,6 +396,8 @@ function createFavoriteElement(favorite) {
         div.classList.add('removing');
         setTimeout(() => {
           loadFavorites();
+          // Обновляем отображение тегов после удаления избранного
+          refreshTagDisplays();
           showNotification('Favorite removed successfully! 🗑️');
         }, 300);
       } catch (error) {
@@ -496,7 +465,29 @@ function sanitizeAndRenderHTML(html) {
     img.style.height = 'auto';
   });
   
-  return temp.innerHTML;
+  // Process links
+  temp.querySelectorAll('a').forEach(link => {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  });
+  
+  // Convert markdown-style links to HTML links if not already processed
+  let htmlContent = temp.innerHTML;
+  
+  // Convert markdown links [text](url) to HTML links
+  htmlContent = htmlContent.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  
+  // Convert plain URLs to links if they're not already in an anchor tag
+  htmlContent = htmlContent.replace(
+    /(?<!["'=])(https?:\/\/[^\s<>"']+)(?![^<]*>|[^<>]*<\/a>)/g, 
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+  
+  // Convert markdown-style bold and italic
+  htmlContent = htmlContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  htmlContent = htmlContent.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  return htmlContent;
 }
 
 function createMessageElement(message) {
@@ -530,13 +521,191 @@ function createMessageElement(message) {
   return messageDiv;
 }
 
+// Global variable to store the current favorite being viewed in chat history
+let currentViewingFavorite = null;
+
+// Function to generate and display summary
+async function generateAndDisplaySummary() {
+  try {
+    if (!currentViewingFavorite) {
+      throw new Error('No chat history is currently being viewed');
+    }
+
+    const generateBtn = document.getElementById('generateSummaryBtn');
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating...';
+
+    // Get settings for the AI model
+    const settings = await loadSettings();
+    if (!settings.apiKeys[settings.provider] || !settings.model) {
+      showNotification('Please configure API settings first! ⚙️', true);
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate Summary';
+      return;
+    }
+
+    // Get chat history text
+    const chatHistory = currentViewingFavorite.messages
+      ?.map(msg => `${msg.role}: ${msg.content}`)
+      .join('\n\n') || '';
+
+    if (!chatHistory) {
+      throw new Error('No chat history available');
+    }
+
+    // Prepare the prompt
+    const prompt = `${settings.summaryPrompt}\n\nChat History:\n${chatHistory}`;
+
+    // Call the AI API
+    const response = await chrome.runtime.sendMessage({
+      type: 'GENERATE_TEXT',
+      prompt: prompt,
+      provider: settings.provider,
+      model: settings.model,
+      apiKey: settings.apiKeys[settings.provider]
+    });
+
+    if (response.status === 'error') {
+      throw new Error(response.error);
+    }
+
+    // Get the generated summary
+    const summary = response.text.trim();
+
+    // Create a copy of the favorite with updated description/summary
+    const updatedFavorite = {
+      ...currentViewingFavorite,
+      summary: summary,
+      description: summary,
+      metadata: {
+        ...currentViewingFavorite.metadata,
+        summaryGeneratedAt: new Date().toISOString()
+      },
+      edited: new Date()
+    };
+
+    // Save to storage first to ensure data is persisted
+    await chrome.runtime.sendMessage({
+      type: 'UPDATE_FAVORITE',
+      favorite: updatedFavorite
+    });
+
+    // Update the currentViewingFavorite object
+    currentViewingFavorite.summary = summary;
+    currentViewingFavorite.description = summary;
+    currentViewingFavorite.metadata = {
+      ...currentViewingFavorite.metadata,
+      summaryGeneratedAt: new Date().toISOString()
+    };
+
+    // Display the summary in the Chat History window
+    const summaryContainer = document.getElementById('chatSummaryContainer');
+    const summaryContent = document.getElementById('chatSummaryContent');
+    
+    // Use sanitizeAndRenderHTML to render HTML content safely
+    summaryContent.innerHTML = sanitizeAndRenderHTML(summary);
+    summaryContainer.style.display = 'block';
+
+    // Find and update the favorite card in the favorites list immediately
+    const favoriteCard = document.querySelector(`.prompt-item[data-id="${currentViewingFavorite.id}"]`);
+    if (favoriteCard) {
+      const descriptionElement = favoriteCard.querySelector('.favorite-description');
+      if (descriptionElement) {
+        // Update the description in the card
+        const truncatedDescription = summary.length > 200 
+          ? summary.substring(0, 200) + '...' 
+          : summary;
+        
+        // First remove old content
+        while (descriptionElement.firstChild) {
+          descriptionElement.removeChild(descriptionElement.firstChild);
+        }
+        
+        // Insert new description
+        descriptionElement.innerHTML = sanitizeAndRenderHTML(truncatedDescription);
+        
+        // Force reflow to trigger repaint
+        void descriptionElement.offsetHeight;
+        
+        // Add temporary style to force repaint
+        descriptionElement.setAttribute('style', 'opacity: 0.99');
+        setTimeout(() => {
+          descriptionElement.removeAttribute('style');
+        }, 50);
+        
+        // Update the title attribute for tooltip
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = summary;
+        descriptionElement.title = tempDiv.textContent;
+        
+        // Add highlight effect to draw attention to the update
+        descriptionElement.classList.add('highlight-update');
+        setTimeout(() => {
+          descriptionElement.classList.remove('highlight-update');
+        }, 1500);
+      }
+      
+      // Also force reflow on the entire card
+      void favoriteCard.offsetHeight;
+    } else {
+      // If card not found, refresh the entire favorites list
+      await loadFavorites();
+    }
+
+    // Update description field if Edit Favorite modal is open and it's the same favorite
+    const editFavoriteModal = document.getElementById('editFavoriteModal');
+    
+    // Check if the modal is visible (has 'show' class or display is 'block')
+    const isModalVisible = editFavoriteModal && 
+                          (editFavoriteModal.classList.contains('show') || 
+                           editFavoriteModal.style.display === 'block');
+    
+    if (isModalVisible && currentEditingFavorite && 
+        currentEditingFavorite.id === currentViewingFavorite.id) {
+      const descriptionInput = document.getElementById('editFavoriteDescription');
+      if (descriptionInput) {
+        descriptionInput.value = summary;
+        // Also update the currentEditingFavorite object
+        currentEditingFavorite.description = summary;
+        currentEditingFavorite.summary = summary;
+      }
+    }
+
+    showNotification('Summary generated successfully! 📝');
+
+  } catch (error) {
+    console.error('Error generating summary:', error);
+    showNotification(`Error generating summary: ${error.message || 'Failed to generate summary'} ❌`, true);
+  } finally {
+    const generateBtn = document.getElementById('generateSummaryBtn');
+    if (generateBtn) {
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate Summary';
+    }
+  }
+}
+
 function showChatHistory(tabId, favorite) {
-  const modal = document.getElementById('chatHistoryModal');
+  // Store the current favorite being viewed
+  currentViewingFavorite = favorite;
+  
+  const chatHistoryWindow = document.getElementById('chatHistoryWindow');
   const modalContent = document.getElementById('chatHistoryContent');
   const updateButton = document.getElementById('updateChatBtn');
+  const summaryContainer = document.getElementById('chatSummaryContainer');
+  const summaryContent = document.getElementById('chatSummaryContent');
   
   // Clear previous content
   modalContent.innerHTML = '';
+  
+  // Check if there's a summary and display it
+  if (favorite.summary) {
+    // Use sanitizeAndRenderHTML to render HTML content safely
+    summaryContent.innerHTML = sanitizeAndRenderHTML(favorite.summary);
+    summaryContainer.style.display = 'block';
+  } else {
+    summaryContainer.style.display = 'none';
+  }
   
   if (favorite.messages && favorite.messages.length > 0) {
     favorite.messages.forEach(message => {
@@ -545,83 +714,86 @@ function showChatHistory(tabId, favorite) {
     });
     
     // Add last updated info if available
-    if (favorite.lastUpdated) {
+    if (favorite.metadata?.lastUpdated) {
       const lastUpdated = document.createElement('div');
       lastUpdated.className = 'last-updated';
-      lastUpdated.textContent = `Last updated: ${new Date(favorite.lastUpdated).toLocaleString()}`;
+      lastUpdated.textContent = `Last updated: ${new Date(favorite.metadata.lastUpdated).toLocaleString()}`;
       modalContent.appendChild(lastUpdated);
     }
   } else {
     modalContent.textContent = 'No chat history available.';
   }
   
-  // Show modal
-  modal.style.display = 'block';
+  // Show chat history window
+  chatHistoryWindow.classList.add('show');
   
-  // Update button handler
-  updateButton.onclick = async () => {
-    try {
-      updateButton.disabled = true;
-      updateButton.textContent = 'Updating...';
-      
-      // Get current tab
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const currentTab = tabs[0];
-      
-      // Request chat content from content script
-      const response = await chrome.tabs.sendMessage(currentTab.id, { action: 'getChatContent' });
-      
-      if (response && response.chatContent) {
-        // Update favorite with new messages
-        favorite.messages = response.chatContent;
-        favorite.lastUpdated = new Date().toISOString();
-        
-        // Save to storage
-        await updateFavorite(favorite);
-        
-        // Refresh display
-        showChatHistory(null, favorite);
-      }
-    } catch (error) {
-      console.error('Error updating chat:', error);
-      modalContent.innerHTML += '<div class="error">Failed to update chat content.</div>';
-    } finally {
-      updateButton.disabled = false;
-      updateButton.textContent = 'Update Chat';
-    }
-  };
+  // Make the window draggable
+  makeDraggable(chatHistoryWindow);
 }
 
-// Add event listeners for chat history modal
+// Function to make an element draggable
+function makeDraggable(element) {
+  const header = element.querySelector('.chat-history-header');
+  let isDragging = false;
+  let offsetX, offsetY;
+  
+  header.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    offsetX = e.clientX - element.getBoundingClientRect().left;
+    offsetY = e.clientY - element.getBoundingClientRect().top;
+    
+    // Prevent text selection during drag
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    
+    const x = e.clientX - offsetX;
+    const y = e.clientY - offsetY;
+    
+    // Keep the window within viewport bounds
+    const maxX = window.innerWidth - element.offsetWidth;
+    const maxY = window.innerHeight - element.offsetHeight;
+    
+    element.style.left = `${Math.max(0, Math.min(x, maxX))}px`;
+    element.style.top = `${Math.max(0, Math.min(y, maxY))}px`;
+    element.style.right = 'auto'; // Clear the right property when dragging
+  });
+  
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+}
+
+// Add event listeners for chat history window
 document.addEventListener('DOMContentLoaded', () => {
   // ... existing initialization code ...
 
-  // Setup chat history modal close handlers
-  const chatHistoryModal = document.getElementById('chatHistoryModal');
-  const closeChatHistoryBtn = document.getElementById('closeChatHistoryModal');
+  // Setup chat history window close handlers
+  const chatHistoryWindow = document.getElementById('chatHistoryWindow');
+  const closeChatHistoryWindowBtn = document.getElementById('closeChatHistoryWindow');
   const closeBtn = document.getElementById('closeChatHistoryBtn');
+  const generateSummaryBtn = document.getElementById('generateSummaryBtn');
 
-  if (closeChatHistoryBtn) {
-    closeChatHistoryBtn.addEventListener('click', function() {
-      chatHistoryModal.style.display = 'none';
-      chatHistoryModal.classList.remove('show');
+  if (closeChatHistoryWindowBtn) {
+    closeChatHistoryWindowBtn.addEventListener('click', function() {
+      chatHistoryWindow.classList.remove('show');
     });
   }
 
   if (closeBtn) {
     closeBtn.addEventListener('click', function() {
-      chatHistoryModal.style.display = 'none';
-      chatHistoryModal.classList.remove('show');
+      chatHistoryWindow.classList.remove('show');
     });
   }
 
-  // Close modal when clicking outside
-  window.addEventListener('click', function(event) {
-    if (event.target === chatHistoryModal) {
-      chatHistoryModal.style.display = 'none';
-      chatHistoryModal.classList.remove('show');
-    }
-  });
+  // Setup Generate Summary button
+  if (generateSummaryBtn) {
+    generateSummaryBtn.addEventListener('click', async function() {
+      await generateAndDisplaySummary();
+    });
+  }
 });
 
 // Function to count tag frequencies from a list of items
@@ -745,6 +917,12 @@ async function loadFavorites(searchQuery = '', retryCount = 3) {
   favoritesList.innerHTML = '';
   
   try {
+    // Ensure database is initialized
+    if (!favoritesDB.db) {
+      console.log('FavoritesDB not initialized, initializing now...');
+      await favoritesDB.init();
+    }
+    
     // Get favorites - this will never throw now
     const favoritesResponse = await getFavoritesWithRetry(retryCount);
     const favorites = favoritesResponse.favorites;
@@ -931,36 +1109,28 @@ function setupTabs() {
   // Update counts initially
   updateTabCounts();
 
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const target = tab.dataset.tab;
-      
-      // Update active states
-      tabs.forEach(t => t.classList.remove('active'));
-      contents.forEach(c => c.classList.remove('active'));
-      
-      tab.classList.add('active');
-      document.getElementById(`${target}-tab`).classList.add('active');
-      
-      // Show/hide buttons based on active tab
-      if (target === 'favorites') {
-        addPromptButton.style.display = 'none';
-        addNoteButton.style.display = 'none';
-        loadFavorites();
-      } else if (target === 'prompts') {
-        addPromptButton.style.display = 'flex';
-        addNoteButton.style.display = 'none';
-        loadPrompts();
-      } else if (target === 'notes') {
-        addPromptButton.style.display = 'none';
-        addNoteButton.style.display = 'flex';
-        loadNotes();
-      }
+  // Show/hide buttons based on active tab
+  const updateButtonVisibility = (target) => {
+    if (target === 'favorites') {
+      addPromptButton.style.display = 'none';
+      addNoteButton.style.display = 'none';
+    } else if (target === 'prompts') {
+      addPromptButton.style.display = 'flex';
+      addNoteButton.style.display = 'none';
+    } else if (target === 'notes') {
+      addPromptButton.style.display = 'none';
+      addNoteButton.style.display = 'flex';
+    }
+  };
 
-      // Update counts after loading
-      updateTabCounts();
-    });
-  });
+  // Set initial button visibility based on active tab
+  const activeTab = document.querySelector('.tab-btn.active');
+  if (activeTab) {
+    updateButtonVisibility(activeTab.dataset.tab);
+  }
+
+  // Update tab counts after loading
+  updateTabCounts();
 }
 
 // Listen for messages from background script
@@ -978,6 +1148,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const favoritesTab = document.getElementById('favorites-tab');
     if (favoritesTab && favoritesTab.classList.contains('active')) {
       loadFavorites();
+    }
+    return true;
+  }
+  
+  if (message.type === 'REFRESH_PROMPTS' || message.type === 'ADD_PROMPT') {
+    // Only reload prompts if we're on the prompts tab
+    const promptsTab = document.getElementById('prompts-tab');
+    if (promptsTab && promptsTab.classList.contains('active')) {
+      loadPrompts();
+    }
+    return true;
+  }
+  
+  if (message.type === 'REFRESH_NOTES' || message.type === 'ADD_NOTE') {
+    // Only reload notes if we're on the notes tab
+    const notesTab = document.getElementById('notes-tab');
+    if (notesTab && notesTab.classList.contains('active')) {
+      loadNotes();
     }
     return true;
   }
@@ -1202,10 +1390,11 @@ function hideModal(modalId) {
 function createPromptElement(prompt) {
   const div = document.createElement('div');
   div.className = 'prompt-item';
+  div.dataset.promptId = prompt.id; // Add ID to all prompt cards
+  
   if (prompt.pinned) {
     div.classList.add('pinned');
     div.draggable = true;
-    div.dataset.promptId = prompt.id;
     
     // Add drag event listeners
     div.addEventListener('dragstart', (e) => {
@@ -1313,9 +1502,15 @@ function createPromptElement(prompt) {
   title.textContent = prompt.title || 'Untitled Prompt';
   
   const text = document.createElement('p');
-  text.textContent = prompt.text.length > 100 
-    ? prompt.text.slice(0, 100) + '...'
+  text.textContent = prompt.text.length > 250 
+    ? prompt.text.slice(0, 250) + '...'
     : prompt.text;
+  
+  // Add tooltip to the prompt text (limited to 400 characters)
+  const tooltipText = prompt.text.length > 400 
+    ? prompt.text.slice(0, 400) + '...' 
+    : prompt.text;
+  text.title = tooltipText;
   
   const date = document.createElement('small');
   date.textContent = new Date(prompt.date).toLocaleString();
@@ -1452,6 +1647,8 @@ function createPromptElement(prompt) {
         div.classList.add('removing');
         setTimeout(() => {
           loadPrompts();
+          // Обновляем отображение тегов после удаления промпта
+          refreshTagDisplays();
           showNotification('Prompt deleted successfully! 🗑️');
         }, 300);
       } catch (error) {
@@ -1491,25 +1688,23 @@ function createPromptElement(prompt) {
 // Load prompts
 async function loadPrompts(searchQuery = '', retryCount = 3) {
   try {
+    // Ensure database is initialized
+    if (!promptDB.db) {
+      console.log('PromptDB not initialized, initializing now...');
+      await promptDB.init();
+    }
+    
     const promptsResponse = await chrome.runtime.sendMessage({ type: 'GET_PROMPTS' });
     
     if (promptsResponse.status === 'error') {
-      if (retryCount > 0 && promptsResponse.error.includes('not initialized')) {
-        console.log(`Retrying to load prompts... (${retryCount} attempts left)`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        return loadPrompts(searchQuery, retryCount - 1);
-      }
-      throw new Error(promptsResponse.error);
+      console.error('Error loading prompts:', promptsResponse.error);
+      return;
     }
     
     const prompts = promptsResponse.prompts || [];
     const promptsList = document.getElementById('promptsList');
     promptsList.innerHTML = '';
-
-    // Display frequent tags using only prompts frequencies
-    const tagFrequencies = await getCombinedTagFrequencies('prompts');
-    displayFrequentTags('promptFrequentTags', tagFrequencies, 'promptSearchInput', loadPrompts);
-
+    
     if (prompts.length === 0) {
       promptsList.innerHTML = '<div class="no-items">No prompts yet</div>';
       return;
@@ -1665,7 +1860,6 @@ const setupSearchInputs = () => {
   // Setup notes search
   const notesSearchInput = document.getElementById('notesSearchInput');
   if (notesSearchInput) {
-    // Создаем новый элемент input
     const newInput = document.createElement('input');
     newInput.type = 'text';
     newInput.id = 'notesSearchInput';
@@ -1674,11 +1868,12 @@ const setupSearchInputs = () => {
     newInput.setAttribute('autocomplete', 'off');
     newInput.setAttribute('role', 'textbox');
     
-    // Заменяем старый элемент новым
     notesSearchInput.parentNode.replaceChild(newInput, notesSearchInput);
     
     const debouncedNotesSearch = debounce((query) => {
-      filterNotes(query);
+      // Clean any potential tag remove characters from the search query
+      const cleanQuery = query.replace(/[×✕✖✗✘]/g, '').trim();
+      loadNotes(cleanQuery);
     }, 300);
 
     newInput.addEventListener('input', (e) => {
@@ -1800,14 +1995,57 @@ async function clearAllData() {
 // Initialize
 async function initialize() {
   console.log('Initializing popup...');
-
-  // Проверяем наличие отложенного импорта
+  
+  // Initialize all databases first to make sure they're ready for any operations
   try {
-    await dataExporter.handlePendingImport();
-  } catch (error) {
-    console.error('Error handling pending import:', error);
+    console.log('Initializing databases on startup...');
+    await initDatabases();
+    console.log('Databases initialized successfully');
+  } catch (dbInitError) {
+    console.error('Error initializing databases on startup:', dbInitError);
+    // Continue with initialization despite database error
+    // This allows the UI to still load even if there are database issues
   }
-
+  
+  // Проверяем наличие отложенного импорта или очистки
+  try {
+    // Проверяем наличие отложенного импорта
+    await dataExporter.handlePendingImport();
+    
+    // Проверяем наличие отложенной очистки
+    const wasCleared = await dataExporter.handlePendingClear();
+    if (wasCleared) {
+      console.log('Data was cleared during reload, refreshing UI...');
+      
+      // Make sure databases are properly initialized after clearing
+      try {
+        console.log('Reinitializing databases after clear...');
+        await initDatabases();
+        console.log('Databases reinitialized successfully after clear');
+      } catch (reinitError) {
+        console.error('Error reinitializing databases after clear:', reinitError);
+      }
+      
+      // Обновляем счетчики вкладок
+      await updateTabCounts();
+      
+      // Обновляем отображение тегов
+      await refreshTagDisplays();
+      
+      // Получаем активную вкладку и обновляем ее содержимое
+      const activeTab = document.querySelector('.tab-btn.active');
+      const activeTabId = activeTab ? activeTab.dataset.tab : 'prompts';
+      
+      // Показываем пустое состояние вместо попытки загрузить данные
+      const container = document.getElementById(`${activeTabId}-tab`);
+      if (container) {
+        container.innerHTML = `<div class="empty-state">No ${activeTabId} found</div>`;
+      }
+    }
+  } catch (error) {
+    console.error('Error handling pending operations:', error);
+  }
+  
   // Initialize theme - apply it immediately to prevent flash of unthemed content
   const savedTheme = localStorage.getItem('theme') || 'light';
   document.documentElement.setAttribute('data-theme', savedTheme);
@@ -1817,6 +2055,8 @@ async function initialize() {
   initTheme();
   setupThemeButtons();
   setupTabs();
+  setupSearchInputs();
+  setupNotesSearch(); // Add specific setup for notes search
 
   // Load favorites since we start on Favorites tab
   loadFavorites();
@@ -1940,81 +2180,43 @@ async function initialize() {
         if (favoritesSearchInput) favoritesSearchInput.value = '';
         if (notesSearchInput) notesSearchInput.value = '';
 
-        // Clear all databases in sequence
-        console.log('Clearing prompts...');
-        await promptDB.clearAll();
-        
-        console.log('Clearing favorites...');
-        await favoritesDB.clearAll();
-        
-        console.log('Clearing notes...');
-        await notesDB.clearAll();
+        // Используем жесткую перезагрузку расширения для очистки данных
+        console.log('Initiating hard clear all with reload...');
+        await dataExporter.hardClearAll();
 
-        // Update tab counts after clearing
-        await updateTabCounts();
-
-        // Send message to background script
-        await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
-
-        // Get active tab
-        const activeTab = document.querySelector('.tab-btn.active');
-        const activeTabId = activeTab ? activeTab.dataset.tab : 'prompts';
-        
-        // Refresh tag displays
-        await refreshTagDisplays();
-
-        showToast('All data has been cleared successfully! 🗑️', 'success');
-        console.log('All data cleared successfully');
+        // Этот код не будет выполнен из-за перезагрузки расширения
+        // Обновление счетчиков и UI произойдет после перезагрузки
       } catch (error) {
         console.error('Error clearing data:', error);
-        showToast(`Error clearing data: ${error.message}`, 'error');
-        
-        // Try to recover
-        try {
-          await initDatabases();
-          const activeTab = document.querySelector('.tab-btn.active');
-          const activeTabId = activeTab ? activeTab.dataset.tab : 'prompts';
-          
-          // Show empty states instead of trying to load data
-          const container = document.getElementById(`${activeTabId}-tab`);
-          if (container) {
-            container.innerHTML = `<div class="empty-state">No ${activeTabId} found</div>`;
-          }
-          
-          await refreshTagDisplays();
-        } catch (refreshError) {
-          console.error('Error refreshing views:', refreshError);
-        }
+        showToast('Error clearing data: ' + error.message, 'error');
       }
     }
   });
 
-  // Setup chat history modal handlers
-  const chatHistoryModal = document.getElementById('chatHistoryModal');
-  const closeChatHistoryBtn = document.getElementById('closeChatHistoryModal');
+  // Setup chat history window handlers
+  const chatHistoryWindow = document.getElementById('chatHistoryWindow');
+  const closeChatHistoryWindowBtn = document.getElementById('closeChatHistoryWindow');
   const closeBtn = document.getElementById('closeChatHistoryBtn');
+  const generateSummaryBtn = document.getElementById('generateSummaryBtn');
 
-  if (closeChatHistoryBtn) {
-    closeChatHistoryBtn.addEventListener('click', function() {
-      chatHistoryModal.style.display = 'none';
-      chatHistoryModal.classList.remove('show');
+  if (closeChatHistoryWindowBtn) {
+    closeChatHistoryWindowBtn.addEventListener('click', function() {
+      chatHistoryWindow.classList.remove('show');
     });
   }
 
   if (closeBtn) {
     closeBtn.addEventListener('click', function() {
-      chatHistoryModal.style.display = 'none';
-      chatHistoryModal.classList.remove('show');
+      chatHistoryWindow.classList.remove('show');
     });
   }
 
-  // Close modal when clicking outside
-  window.addEventListener('click', function(event) {
-    if (event.target === chatHistoryModal) {
-      chatHistoryModal.style.display = 'none';
-      chatHistoryModal.classList.remove('show');
-    }
-  });
+  // Setup Generate Summary button
+  if (generateSummaryBtn) {
+    generateSummaryBtn.addEventListener('click', async function() {
+      await generateAndDisplaySummary();
+    });
+  }
 
   // Setup notes modal handlers
   const noteModal = document.getElementById('noteModal');
@@ -2106,6 +2308,8 @@ async function initialize() {
         // Hide modal and refresh list
         hideModal('addPromptModal');
         await loadPrompts();
+        // Обновляем отображение тегов после сохранения промпта
+        await refreshTagDisplays();
         showNotification('Prompt saved successfully! ✨');
         
       } catch (error) {
@@ -2155,11 +2359,16 @@ async function initialize() {
           throw new Error(response.error);
         }
         
-        // Hide modal and refresh list
+        // Hide modal first
         hideModal('editModal');
-        await loadPrompts();
-        showNotification('Prompt updated successfully! ✨');
         
+        // Refresh list
+        await loadPrompts();
+        
+        // Обновляем отображение тегов после редактирования промпта
+        await refreshTagDisplays();
+        
+        showNotification('Prompt updated successfully! ✨');
       } catch (error) {
         console.error('Error updating prompt:', error);
         showNotification('Error updating prompt! ❌', true);
@@ -2195,9 +2404,9 @@ async function initialize() {
           throw new Error('No favorite being edited');
         }
         
-        const titleInput = document.getElementById('editFavoriteTitle');
+        const editTitleInput = document.getElementById('editFavoriteTitle');
         const descriptionInput = document.getElementById('editFavoriteDescription');
-        const title = titleInput.value.trim();
+        const title = editTitleInput.value.trim();
         const description = descriptionInput.value.trim();
         
         // Get tags from the current tags manager
@@ -2207,10 +2416,16 @@ async function initialize() {
           ...currentEditingFavorite,
           title: title || 'Untitled Chat',
           description: description,
+          summary: description, // Обновляем summary вместе с description
           tags: tags,
-          edited: new Date()
+          edited: new Date(),
+          metadata: {
+            ...currentEditingFavorite.metadata,
+            summaryGeneratedAt: new Date().toISOString()
+          }
         };
-        
+
+        // Сначала сохраняем в хранилище
         const response = await chrome.runtime.sendMessage({
           type: 'UPDATE_FAVORITE',
           favorite: updatedFavorite
@@ -2219,10 +2434,116 @@ async function initialize() {
         if (response.status === 'error') {
           throw new Error(response.error);
         }
+
+        // Если окно Chat History открыто для этого же избранного чата
+        if (currentViewingFavorite && currentViewingFavorite.id === currentEditingFavorite.id) {
+          // Обновляем объект currentViewingFavorite
+          currentViewingFavorite.description = description;
+          currentViewingFavorite.summary = description;
+          currentViewingFavorite.metadata = {
+            ...currentViewingFavorite.metadata,
+            summaryGeneratedAt: new Date().toISOString()
+          };
+
+          // Обновляем отображение summary в окне Chat History
+          const summaryContainer = document.getElementById('chatSummaryContainer');
+          const summaryContent = document.getElementById('chatSummaryContent');
+          if (summaryContent && summaryContainer) {
+            summaryContent.innerHTML = sanitizeAndRenderHTML(description);
+            summaryContainer.style.display = description ? 'block' : 'none';
+          }
+        }
+
+        // Немедленно обновляем карточку в списке избранного
+        const favoriteCard = document.querySelector(`.prompt-item[data-id="${currentEditingFavorite.id}"]`);
+        if (favoriteCard) {
+          // Update title
+          const titleElement = favoriteCard.querySelector('.favorite-title');
+          if (titleElement) {
+            titleElement.textContent = title || 'Untitled Chat';
+            // Preserve the href attribute
+            titleElement.href = currentEditingFavorite.url;
+          }
+          
+          // Update description
+          const descriptionElement = favoriteCard.querySelector('.favorite-description');
+          if (descriptionElement) {
+            const truncatedDescription = description.length > 200 
+              ? description.substring(0, 200) + '...' 
+              : description;
+            descriptionElement.innerHTML = sanitizeAndRenderHTML(truncatedDescription);
+            
+            // Обновляем tooltip
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = description;
+            descriptionElement.title = tempDiv.textContent;
+            
+            // Add highlight effect
+            descriptionElement.classList.add('highlight-update');
+            setTimeout(() => {
+              descriptionElement.classList.remove('highlight-update');
+            }, 1500);
+          }
+          
+          // Update tags
+          const tagsContainer = favoriteCard.querySelector('.prompt-tags');
+          if (tagsContainer) {
+            // Clear existing tags
+            tagsContainer.innerHTML = '';
+            
+            // Add new tags
+            if (tags && tags.length > 0) {
+              tags.forEach(tag => {
+                const tagSpan = document.createElement('span');
+                tagSpan.className = 'tag clickable';
+                tagSpan.textContent = tag.replace(/[×✕✖✗✘]/g, '').trim();
+                
+                // Add click handler for tag filtering
+                tagSpan.onclick = (e) => {
+                  e.stopPropagation();
+                  const searchInput = document.getElementById('favoritesSearchInput');
+                  if (searchInput) {
+                    const cleanTag = tag.replace(/[×✕✖✗✘]/g, '').trim();
+                    const currentQuery = searchInput.value.trim();
+                    const tagWithHash = `#${cleanTag}`;
+                    
+                    if (!currentQuery.includes(tagWithHash)) {
+                      const newQuery = currentQuery ? `${currentQuery} ${tagWithHash}` : tagWithHash;
+                      searchInput.value = newQuery;
+                      loadFavorites(newQuery);
+                    }
+                  }
+                };
+                
+                tagsContainer.appendChild(tagSpan);
+              });
+              
+              // Make tags container visible
+              tagsContainer.style.display = 'flex';
+            } else {
+              // Hide tags container if no tags
+              tagsContainer.style.display = 'none';
+            }
+          }
+          
+          // Update date display to show edited timestamp
+          const dateElement = favoriteCard.querySelector('small');
+          if (dateElement) {
+            const now = new Date();
+            dateElement.textContent = `${new Date(currentEditingFavorite.date).toLocaleString()} (edited ${now.toLocaleString()})`;
+          }
+          
+          // Force reflow on the entire card
+          void favoriteCard.offsetHeight;
+        } else {
+          // If card not found, refresh the entire favorites list
+          await loadFavorites();
+        }
         
-        // Hide modal and refresh list
+        // Закрываем модальное окно и обновляем список
         hideModal('editFavoriteModal');
-        await loadFavorites();
+        // Обновляем отображение тегов после редактирования избранного
+        await refreshTagDisplays();
         showNotification('Favorite updated successfully! ✨');
         
       } catch (error) {
@@ -2266,15 +2587,39 @@ let lastSavedContent = '';
 let contentChanged = false;
 let isSaving = false;
 
-async function loadNotes() {
+// Helper function to filter notes by search query
+function filterNotesByQuery(notes, searchQuery) {
+  if (!searchQuery) {
+    return notes;
+  }
+  
+  const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
+  
+  return notes.filter(note => {
+    // Check if ALL search words match the note content
+    return searchWords.every(word => {
+      return note.content?.toLowerCase().includes(word);
+    });
+  });
+}
+
+async function loadNotes(searchQuery = '') {
   try {
-    const notesList = document.getElementById('notes-tab');
-    if (!notesList) {
-      console.warn('Notes container not found');
+    console.log('Loading notes with search query:', searchQuery);
+    
+    const notesTab = document.getElementById('notes-tab');
+    const notesList = document.getElementById('notesList');
+    
+    if (!notesTab || !notesList) {
+      console.warn('Notes elements not found', {
+        notesTab: !!notesTab,
+        notesList: !!notesList
+      });
       return;
     }
 
-    // Clear existing content
+    console.log('Notes elements found, clearing list');
+    // Clear existing content in the notes list only
     notesList.innerHTML = '';
 
     // Create containers for pinned and unpinned notes
@@ -2285,15 +2630,33 @@ async function loadNotes() {
     unpinnedContainer.className = 'unpinned-notes';
 
     try {
+      // Ensure database is initialized
+      if (!notesDB.db) {
+        console.log('NotesDB not initialized, initializing now...');
+        await notesDB.init();
+      }
+      
       const notes = await notesDB.getAllNotes();
+      console.log(`Retrieved ${notes?.length || 0} notes from database`);
       
       if (!notes || notes.length === 0) {
         notesList.innerHTML = '<div class="empty-state">No notes found</div>';
         return;
       }
 
+      // Filter notes if search query exists
+      const filteredNotes = searchQuery ? filterNotesByQuery(notes, searchQuery) : notes;
+      console.log(`Filtered to ${filteredNotes.length} notes based on search query`);
+      
+      // Handle no search results
+      if (filteredNotes.length === 0) {
+        console.log('No matches found for search query');
+        notesList.innerHTML = '<div class="no-items">No matches found</div>';
+        return;
+      }
+
       // Sort notes: pinned first (by order), then by date
-      notes.sort((a, b) => {
+      filteredNotes.sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
         if (a.pinned && b.pinned) {
@@ -2306,15 +2669,23 @@ async function loadNotes() {
         }
         return new Date(b.date) - new Date(a.date);
       });
+      console.log('Notes sorted');
 
-      notes.forEach(note => {
+      let pinnedCount = 0;
+      let unpinnedCount = 0;
+      
+      filteredNotes.forEach(note => {
         const noteElement = createNoteCard(note);
         if (note.pinned) {
           pinnedContainer.appendChild(noteElement);
+          pinnedCount++;
         } else {
           unpinnedContainer.appendChild(noteElement);
+          unpinnedCount++;
         }
       });
+      
+      console.log(`Created ${pinnedCount} pinned and ${unpinnedCount} unpinned note cards`);
 
       // Only append containers if they have content
       if (pinnedContainer.children.length > 0) {
@@ -2324,13 +2695,16 @@ async function loadNotes() {
       if (unpinnedContainer.children.length > 0) {
         notesList.appendChild(unpinnedContainer);
       }
+      
+      console.log('Notes loaded successfully');
 
     } catch (error) {
       console.error('Error loading notes:', error);
       notesList.innerHTML = '<div class="error-state">Error loading notes. Please try again.</div>';
     }
   } catch (error) {
-    console.error('Error in loadNotes:', error);
+    console.error('Error loading notes:', error);
+    notesList.innerHTML = '<div class="error-state">Error loading notes. Please try again.</div>';
   }
 }
 
@@ -2347,6 +2721,7 @@ function convertMarkdownToHtml(text) {
   let inList = false;
   let currentList = null;
   let listType = null; // 'ul' for unordered, 'ol' for ordered
+  let orderedListCounter = 0; // Track the current number in ordered lists
   
   lines.forEach((line, index) => {
     // Process headers first
@@ -2370,18 +2745,60 @@ function convertMarkdownToHtml(text) {
 
     // Process list items
     const unorderedListMatch = line.match(/^\s*\*\s+(.+)$/);
-    const orderedListMatch = line.match(/^\s*\d+\.\s+(.+)$/);
+    const orderedListMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
     
     if (unorderedListMatch || orderedListMatch) {
       const newListType = unorderedListMatch ? 'ul' : 'ol';
-      const listText = (unorderedListMatch || orderedListMatch)[1];
+      const listText = unorderedListMatch ? unorderedListMatch[1] : orderedListMatch[2];
       
+      // If we're switching from ordered to unordered list, save the current number
+      if (inList && listType === 'ol' && newListType === 'ul') {
+        // Remember the last ordered list number
+        orderedListCounter = parseInt(Array.from(currentList.children).length);
+        container.appendChild(currentList);
+        currentList = document.createElement(newListType);
+        currentList.style.marginTop = '0.5em';
+        currentList.style.marginBottom = '0.5em';
+        currentList.style.paddingLeft = '1.5em';
+        inList = true;
+        listType = newListType;
+      }
+      // If we're switching from unordered to ordered list, use the saved counter
+      else if (inList && listType === 'ul' && newListType === 'ol') {
+        container.appendChild(currentList);
+        currentList = document.createElement(newListType);
+        // If we have a specific number in the markdown, use it to reset the counter
+        if (orderedListMatch) {
+          orderedListCounter = parseInt(orderedListMatch[1]) - 1; // -1 because we'll increment below
+        }
+        // Set the start attribute to continue numbering
+        if (orderedListCounter > 0) {
+          currentList.setAttribute('start', orderedListCounter + 1);
+        }
+        currentList.style.marginTop = '0.5em';
+        currentList.style.marginBottom = '0.5em';
+        currentList.style.paddingLeft = '1.5em';
+        inList = true;
+        listType = newListType;
+      }
       // If we're not in a list or switching list types, create a new list
-      if (!inList || listType !== newListType) {
+      else if (!inList || listType !== newListType) {
         if (inList) {
           container.appendChild(currentList);
         }
         currentList = document.createElement(newListType);
+        
+        // For ordered lists, check if we need to set a start value
+        if (newListType === 'ol' && orderedListMatch) {
+          const startNum = parseInt(orderedListMatch[1]);
+          if (startNum > 1) {
+            currentList.setAttribute('start', startNum);
+          }
+          orderedListCounter = startNum;
+        } else if (newListType === 'ol') {
+          orderedListCounter = 1;
+        }
+        
         currentList.style.marginTop = '0.5em';
         currentList.style.marginBottom = '0.5em';
         currentList.style.paddingLeft = '1.5em';
@@ -2402,7 +2819,7 @@ function convertMarkdownToHtml(text) {
       container.appendChild(currentList);
       inList = false;
       currentList = null;
-      listType = null;
+      // Don't reset listType or orderedListCounter to maintain context
     }
 
     // Process regular text
@@ -2845,30 +3262,14 @@ document.addEventListener('keydown', (e) => {
       // Trigger Save Changes button in Edit Favorite modal
       document.getElementById('saveFavoriteEdit')?.click();
     } else if (noteModal && noteModal.style.display === 'block') {
-      // For note modal, save the content
-      saveNoteContent().then(() => {
-        closeNoteModal(e);
-      });
+      // Save note content
+      saveNoteContent();
     } else if (settingsModal && settingsModal.style.display === 'block') {
       // Trigger Save Settings button in Settings modal
       document.getElementById('saveSettingsBtn')?.click();
     }
   }
 });
-
-function filterNotes(searchText) {
-  const noteCards = document.querySelectorAll('.note-card');
-  const searchLower = searchText.toLowerCase();
-  
-  noteCards.forEach(card => {
-    const content = card.querySelector('.note-card-content').textContent.toLowerCase();
-    const matches = content.includes(searchLower);
-    card.style.display = matches ? 'block' : 'none';
-  });
-}
-
-// Setup notes search
-document.getElementById('notesSearchInput')?.addEventListener('input', (e) => filterNotes(e.target.value));
 
 // Add new saveNoteContent function
 async function saveNoteContent() {
@@ -2914,15 +3315,15 @@ async function saveNoteContent() {
 
 // Settings management
 const DEFAULT_SETTINGS = {
-  provider: 'openrouter',
+  provider: 'google',
   apiKeys: {
     openrouter: '',
     google: ''
   },
   model: '',
-  titlePrompt: 'Generate a concise and descriptive title for this content.',
-  summaryPrompt: 'Summarize the key points of this content in 2-3 sentences.',
-  tagsPrompt: 'Generate 3-5 relevant tags for this content, separated by commas.'
+  titlePrompt: 'Come up with a great expanded title for this article fully reflecting its essence, the title should be in the same language as the article, up to 70 characters, no tags, no highlighting characters:{text}',
+  summaryPrompt: 'Generate a concise summary of this chat conversation in 3-4 sentences. No more than 300 characters. No mention of the user or the assistant. Just the most important thing, the very essence of the chat. You don\'t need introductory words. Just the gist. The problem and its solution. You don\'t need introductory words about what the user was interested in and who answered him. Highlight only the important points in html format using the html tags <b> and </b>, but not all of the text. Don\'t use the word summary or similar at the beginning of the summary. No introductory words or titles before summary. Summarize should be in the language in which most of the chat is written. If there is even a bit of text in Russian, summarize should be in Russian. Ignore the message: "The server is busy. Please try again later." When you make a summary, don\'t write about the need for a doctor\'s consultation. Don\'t use markdown. Convey the most important point:{text}',
+  tagsPrompt: 'Generate 1-3 relevant tags for this chat. Rules: 1. Each tag should be 1-2 words, separated by spaces. Always separate two words in the same tag with a hyphen. No more than two words can be separated by a hyphen. 2. Tags should reflect the main topics, technologies, or concepts discussed. 3. If the chat has anything to do with programming or programs or software, your first tag should be: programming. 4. If the chat has anything to do with artificial intelligence, your first tag should be ai, and then the second tag should be the name of that ai. 5. If the chat has anything to do with a large language machine or a chatbot or something similar, then your first tag should be: llm, followed by the name of that chatbot. 6. If the chat has something to do with health, treatment, gymnastics, fitness improvement, recipes for health, then the first tag should be the word health. 7. Return only the tags without quotes or commas:{text}'
 };
 
 // Models available for each provider
@@ -3291,74 +3692,6 @@ async function initSettingsModal() {
   document.getElementById('summaryPromptInput').value = settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt;
   document.getElementById('tagsPromptInput').value = settings.tagsPrompt || DEFAULT_SETTINGS.tagsPrompt;
   
-  // Setup AI description generation
-  document.getElementById('generateDescriptionBtn')?.addEventListener('click', async () => {
-    try {
-      if (!currentEditingFavorite) {
-        throw new Error('No favorite being edited');
-      }
-
-      const settings = await loadSettings();
-      if (!settings.apiKeys[settings.provider] || !settings.model) {
-        showNotification('Please configure API settings first! ⚙️', true);
-        return;
-      }
-
-      const generateBtn = document.getElementById('generateDescriptionBtn');
-      generateBtn.disabled = true;
-      generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 4V2C6.48 2 2 6.48 2 12h2c0-4.41 3.59-8 8-8zm6 2h-2c0 3.31-2.69 6-6 6s-6-2.69-6-6H4c0 4.41 3.59 8 8 8s8-3.59 8-8zm-6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>';
-
-      // Get chat history text
-      const chatHistory = currentEditingFavorite.messages
-        ?.map(msg => `${msg.role}: ${msg.content}`)
-        .join('\n\n') || '';
-
-      if (!chatHistory) {
-        throw new Error('No chat history available');
-      }
-
-      // Prepare the prompt
-      const prompt = `${settings.summaryPrompt}\n\nChat History:\n${chatHistory}`;
-
-      // Call the AI API
-      const response = await chrome.runtime.sendMessage({
-        type: 'GENERATE_TEXT',
-        prompt: prompt,
-        provider: settings.provider,
-        model: settings.model,
-        apiKey: settings.apiKeys[settings.provider]
-      });
-
-      if (response.status === 'error') {
-        throw new Error(response.error);
-      }
-
-      // Update the description field
-      const descriptionInput = document.getElementById('editFavoriteDescription');
-      descriptionInput.value = response.text.trim();
-
-      showNotification('Description generated successfully! ✨');
-    } catch (error) {
-      console.error('Error generating description:', error);
-      showNotification(`Error generating description: ${error.message || 'Failed to generate description'} ❌\nTry using a different model or check your API settings.`, true);
-    } finally {
-      const generateBtn = document.getElementById('generateDescriptionBtn');
-      generateBtn.disabled = false;
-      generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
-    }
-  });
-  
-  // Clear connection status
-  connectionStatus.textContent = '';
-  connectionStatus.className = 'connection-status';
-  
-  // Show connection status if API key is present
-  const currentApiKey = settings.apiKeys[settings.provider];
-  if (currentApiKey && currentApiKey.trim() !== '') {
-    connectionStatus.textContent = 'API key saved. Click "Test Connection" to verify.';
-    connectionStatus.className = 'connection-status';
-  }
-  
   // Create a debounced save function
   const saveSettingsDebounced = debounce(async () => {
     try {
@@ -3402,6 +3735,31 @@ async function initSettingsModal() {
       connectionStatus.className = 'connection-status error';
     }
   }, 1000);
+  
+  // Add event listeners for reset prompt buttons
+  document.getElementById('resetTitlePromptBtn').addEventListener('click', () => {
+    const titleInput = document.getElementById('titlePromptInput');
+    titleInput.value = DEFAULT_SETTINGS.titlePrompt;
+    // Trigger input event to ensure changes are detected
+    titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+    showNotification('Title prompt reset to default ✓');
+  });
+  
+  document.getElementById('resetSummaryPromptBtn').addEventListener('click', () => {
+    const summaryInput = document.getElementById('summaryPromptInput');
+    summaryInput.value = DEFAULT_SETTINGS.summaryPrompt;
+    // Trigger input event to ensure changes are detected
+    summaryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    showNotification('Summary prompt reset to default ✓');
+  });
+  
+  document.getElementById('resetTagsPromptBtn').addEventListener('click', () => {
+    const tagsInput = document.getElementById('tagsPromptInput');
+    tagsInput.value = DEFAULT_SETTINGS.tagsPrompt;
+    // Trigger input event to ensure changes are detected
+    tagsInput.dispatchEvent(new Event('input', { bubbles: true }));
+    showNotification('Tags prompt reset to default ✓');
+  });
   
   // Add auto-save to all input fields
   document.getElementById('providerSelect').addEventListener('change', () => {
@@ -4154,6 +4512,60 @@ async function generateTagsWithAI(favorite) {
     if (currentEditingFavorite) {
       currentEditingFavorite.tags = allTags;
       currentEditingFavorite.edited = new Date();
+      
+      // Immediately update the favorite card in the list
+      const favoriteCard = document.querySelector(`.prompt-item[data-id="${currentEditingFavorite.id}"]`);
+      if (favoriteCard) {
+        // Update tags
+        const tagsContainer = favoriteCard.querySelector('.prompt-tags');
+        if (tagsContainer) {
+          // Clear existing tags
+          tagsContainer.innerHTML = '';
+          
+          // Add new tags
+          if (allTags && allTags.length > 0) {
+            allTags.forEach(tag => {
+              const tagSpan = document.createElement('span');
+              tagSpan.className = 'tag clickable';
+              tagSpan.textContent = tag.replace(/[×✕✖✗✘]/g, '').trim();
+              
+              // Add click handler for tag filtering
+              tagSpan.onclick = (e) => {
+                e.stopPropagation();
+                const searchInput = document.getElementById('favoritesSearchInput');
+                if (searchInput) {
+                  const cleanTag = tag.replace(/[×✕✖✗✘]/g, '').trim();
+                  const currentQuery = searchInput.value.trim();
+                  const tagWithHash = `#${cleanTag}`;
+                  
+                  if (!currentQuery.includes(tagWithHash)) {
+                    const newQuery = currentQuery ? `${currentQuery} ${tagWithHash}` : tagWithHash;
+                    searchInput.value = newQuery;
+                    loadFavorites(newQuery);
+                  }
+                }
+              };
+              
+              tagsContainer.appendChild(tagSpan);
+            });
+            
+            // Make tags container visible
+            tagsContainer.style.display = 'flex';
+            
+            // Add highlight effect
+            tagsContainer.classList.add('highlight-update');
+            setTimeout(() => {
+              tagsContainer.classList.remove('highlight-update');
+            }, 1500);
+          } else {
+            // Hide tags container if no tags
+            tagsContainer.style.display = 'none';
+          }
+        }
+        
+        // Force reflow on the entire card
+        void favoriteCard.offsetHeight;
+      }
     }
 
     showNotification('Tags generated successfully! 🏷️');
@@ -4183,6 +4595,256 @@ document.addEventListener('DOMContentLoaded', () => {
         const favorite = favorites.favorites.find(f => f.id === favoriteId);
         if (favorite) {
           await generateTagsWithAI(favorite);
+        } else {
+          showNotification('Favorite not found! ❌', true);
+        }
+      }
+    });
+  }
+});
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(button => {
+  button.addEventListener('click', () => {
+    const tabId = button.getAttribute('data-tab');
+    
+    // Remove active class from all tabs and content
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    // Add active class to clicked tab and corresponding content
+    button.classList.add('active');
+    document.getElementById(`${tabId}-tab`).classList.add('active');
+    
+    // Update button visibility
+    const addPromptButton = document.getElementById('addPromptButton');
+    const addNoteButton = document.getElementById('addNoteButton');
+    
+    if (tabId === 'favorites') {
+      addPromptButton.style.display = 'none';
+      addNoteButton.style.display = 'none';
+      const searchQuery = document.getElementById('favoritesSearchInput')?.value.trim() || '';
+      loadFavorites(searchQuery);
+    } else if (tabId === 'prompts') {
+      addPromptButton.style.display = 'flex';
+      addNoteButton.style.display = 'none';
+      const searchQuery = document.getElementById('promptSearchInput')?.value.trim() || '';
+      loadPrompts(searchQuery);
+    } else if (tabId === 'notes') {
+      addPromptButton.style.display = 'none';
+      addNoteButton.style.display = 'flex';
+      const searchQuery = document.getElementById('notesSearchInput')?.value.trim() || '';
+      loadNotes(searchQuery);
+    }
+    
+    // Update tab counts
+    updateTabCounts();
+  });
+});
+
+// Function to setup notes search
+function setupNotesSearch() {
+  const notesSearchInput = document.getElementById('notesSearchInput');
+  if (notesSearchInput) {
+    console.log('Setting up notes search input');
+    
+    // Make sure we're working with a clean input element
+    notesSearchInput.value = '';
+    
+    const debouncedNotesSearch = debounce((query) => {
+      console.log('Searching notes with query:', query);
+      // Clean any potential tag remove characters from the search query
+      const cleanQuery = query.replace(/[×✕✖✗✘]/g, '').trim();
+      loadNotes(cleanQuery);
+    }, 300);
+
+    // Remove any existing listeners to prevent duplicates
+    const newInput = notesSearchInput.cloneNode(true);
+    notesSearchInput.parentNode.replaceChild(newInput, notesSearchInput);
+    
+    newInput.addEventListener('input', (e) => {
+      debouncedNotesSearch(e.target.value.trim());
+    });
+    
+    console.log('Notes search input setup complete');
+  } else {
+    console.warn('Notes search input not found');
+  }
+}
+
+// Make showToast available globally
+if (typeof window !== 'undefined') {
+  window.showToast = showToast;
+}
+
+// Add this function to generate descriptions with AI
+async function generateDescriptionWithAI(favorite) {
+  const generateBtn = document.getElementById('generateDescriptionBtn');
+  try {
+    // Get current settings
+    const settings = await loadSettings();
+    if (!settings || !settings.apiKeys[settings.provider] || !settings.model) {
+      showNotification('Please configure API settings first! ⚙️', true);
+      return;
+    }
+
+    // Disable button and show loading state
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = '<svg class="ai-icon spinning" viewBox="0 0 24 24" width="16" height="16"><path d="M12 4V2C6.48 2 2 6.48 2 12h2c0-4.41 3.59-8 8-8zm6 2h-2c0 3.31-2.69 6-6 6s-6-2.69-6-6H4c0 4.41 3.59 8 8 8s8-3.59 8-8zm-6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>';
+
+    // Get chat history text
+    const chatHistory = favorite.messages
+      ?.map(msg => `${msg.role}: ${msg.content}`)
+      .join('\n\n') || '';
+
+    if (!chatHistory) {
+      throw new Error('No chat history available');
+    }
+
+    // Use the description/summary prompt template from settings
+    const prompt = `${settings.summaryPrompt || 'Generate a concise description or summary for this chat conversation.'}\n\nChat History:\n${chatHistory}`;
+
+    // Call the AI API
+    const response = await chrome.runtime.sendMessage({
+      type: 'GENERATE_TEXT',
+      prompt: prompt,
+      provider: settings.provider,
+      model: settings.model,
+      apiKey: settings.apiKeys[settings.provider]
+    });
+
+    if (response.status === 'error') {
+      throw new Error(response.error);
+    }
+
+    // Get the generated description
+    const description = response.text.trim();
+
+    // Update the description input in Edit Favorite window
+    const descriptionInput = document.getElementById('editFavoriteDescription');
+    if (descriptionInput) {
+      descriptionInput.value = description;
+      
+      // Also update the currentEditingFavorite object
+      if (currentEditingFavorite) {
+        currentEditingFavorite.description = description;
+      }
+    }
+
+    // Create a copy of the favorite with updated description
+    const updatedFavorite = {
+      ...favorite,
+      description: description,
+      summary: description,
+      metadata: {
+        ...favorite.metadata,
+        summaryGeneratedAt: new Date().toISOString()
+      },
+      edited: new Date()
+    };
+
+    // Save to storage immediately
+    await chrome.runtime.sendMessage({
+      type: 'UPDATE_FAVORITE',
+      favorite: updatedFavorite
+    });
+
+    // Update the summary in the Chat History window if it's open for the same favorite
+    if (currentViewingFavorite && 
+        currentViewingFavorite.id === favorite.id) {
+      // Update the currentViewingFavorite object
+      currentViewingFavorite.description = description;
+      currentViewingFavorite.summary = description;
+      currentViewingFavorite.metadata = {
+        ...currentViewingFavorite.metadata,
+        summaryGeneratedAt: new Date().toISOString()
+      };
+
+      // Update the summary display in the Chat History window
+      const summaryContainer = document.getElementById('chatSummaryContainer');
+      const summaryContent = document.getElementById('chatSummaryContent');
+      
+      if (summaryContent && summaryContainer) {
+        // Use sanitizeAndRenderHTML to render HTML content safely
+        summaryContent.innerHTML = sanitizeAndRenderHTML(description);
+        summaryContainer.style.display = 'block';
+      }
+    }
+    
+    // Find and update the favorite card in the favorites list immediately
+    const favoriteCard = document.querySelector(`.prompt-item[data-id="${favorite.id}"]`);
+    if (favoriteCard) {
+      const descriptionElement = favoriteCard.querySelector('.favorite-description');
+      if (descriptionElement) {
+        // Update the description in the card
+        const truncatedDescription = description.length > 200 
+          ? description.substring(0, 200) + '...' 
+          : description;
+        
+        // First remove old content
+        while (descriptionElement.firstChild) {
+          descriptionElement.removeChild(descriptionElement.firstChild);
+        }
+        
+        // Insert new description
+        descriptionElement.innerHTML = sanitizeAndRenderHTML(truncatedDescription);
+        
+        // Force reflow to trigger repaint
+        void descriptionElement.offsetHeight;
+        
+        // Add temporary style to force repaint
+        descriptionElement.setAttribute('style', 'opacity: 0.99');
+        setTimeout(() => {
+          descriptionElement.removeAttribute('style');
+        }, 50);
+        
+        // Update the title attribute for tooltip
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = description;
+        descriptionElement.title = tempDiv.textContent;
+        
+        // Add highlight effect to draw attention to the update
+        descriptionElement.classList.add('highlight-update');
+        setTimeout(() => {
+          descriptionElement.classList.remove('highlight-update');
+        }, 1500);
+      }
+      
+      // Also force reflow on the entire card
+      void favoriteCard.offsetHeight;
+    } else {
+      // If card not found, refresh the entire favorites list
+      await loadFavorites();
+    }
+
+    // Показываем уведомление об успешной генерации
+    showNotification('Description generated successfully! 📝');
+  } catch (error) {
+    console.error('Error generating description:', error);
+    showNotification(`Error generating description: ${error.message} ❌`, true);
+  } finally {
+    // Restore button state
+    generateBtn.disabled = false;
+    generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
+  }
+}
+
+// Add event listener for the generate description button
+document.addEventListener('DOMContentLoaded', () => {
+  const generateDescriptionBtn = document.getElementById('generateDescriptionBtn');
+  if (generateDescriptionBtn) {
+    generateDescriptionBtn.addEventListener('click', async () => {
+      const favoriteId = document.getElementById('editFavoriteModal').dataset.favoriteId;
+      if (!favoriteId) {
+        showNotification('No favorite selected! ❌', true);
+        return;
+      }
+
+      const favorites = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+      if (favorites.status === 'ok') {
+        const favorite = favorites.favorites.find(f => f.id === favoriteId);
+        if (favorite) {
+          await generateDescriptionWithAI(favorite);
         } else {
           showNotification('Favorite not found! ❌', true);
         }
