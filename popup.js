@@ -171,15 +171,49 @@ function createFavoriteElement(favorite) {
           // Get current search query
           let currentQuery = searchInput.value.trim();
           
-          // If the tag is already in the search query (with or without #), don't add it again
+          // If the tag is already in the search query (with #), don't add it again
           const tagWithHash = `#${cleanTag}`;
-          if (!currentQuery.includes(tagWithHash)) {
+          
+          // Extract all hashtags from the current query to check if this one already exists
+          const hashtagRegex = /#[^\s#]+(?:\s+[^\s#]+)*/g;
+          const existingHashtags = currentQuery.match(hashtagRegex) || [];
+          
+          // Check if the exact tag (case insensitive) is already in the search
+          const tagAlreadyInSearch = existingHashtags.some(hashtag => 
+            hashtag.toLowerCase() === tagWithHash.toLowerCase()
+          );
+          
+          // Update all tag elements with the same text to reflect active state
+          const allTags = document.querySelectorAll('.tag');
+          allTags.forEach(t => {
+            // Clean tag text for comparison
+            const tagText = t.textContent.replace(/[×✕✖✗✘]/g, '').trim();
+            if (tagText.toLowerCase() === cleanTag.toLowerCase()) {
+              if (tagAlreadyInSearch) {
+                t.classList.remove('active');
+              } else {
+                t.classList.add('active');
+              }
+            }
+          });
+          
+          if (tagAlreadyInSearch) {
+            // Remove the tag if it's already in the search
+            // Need to use replace with the exact tag to handle multi-word tags
+            currentQuery = currentQuery.replace(new RegExp(tagWithHash.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1"), 'i'), '').trim();
+            searchInput.value = currentQuery;
+            tagSpan.classList.remove('active');
+            console.log('Removed tag, new query:', currentQuery);
+          } else {
             // Add the tag to the existing search query with #
             const newQuery = currentQuery ? `${currentQuery} ${tagWithHash}` : tagWithHash;
             searchInput.value = newQuery;
-            // Trigger the search with the combined query
-            loadFavorites(newQuery);
+            tagSpan.classList.add('active');
+            console.log('Added tag, new query:', newQuery);
           }
+          
+          // Trigger the search with the updated query
+          loadFavorites(searchInput.value.trim());
         }
       };
       tags.appendChild(tagSpan);
@@ -442,50 +476,49 @@ function getDragAfterElement(container, y) {
 
 // Function to safely render HTML content
 function sanitizeAndRenderHTML(html) {
-  // Create a temporary div for safe HTML processing
+  if (!html) return '';
+  
   const temp = document.createElement('div');
   temp.innerHTML = html;
+
+  // Remove potentially dangerous elements and attributes
+  const scripts = temp.querySelectorAll('script');
+  scripts.forEach(script => script.remove());
   
-  // Remove elements with class e0558cb1
-  temp.querySelectorAll('.e0558cb1').forEach(el => el.remove());
-  
-  // Process code blocks
-  temp.querySelectorAll('pre code').forEach(block => {
-    block.className = block.className || 'language-plaintext';
+  const elements = temp.querySelectorAll('*');
+  elements.forEach(el => {
+    const attributesToRemove = ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onkeydown', 'onkeyup'];
+    attributesToRemove.forEach(attr => {
+      if (el.hasAttribute(attr)) {
+        el.removeAttribute(attr);
+      }
+    });
   });
-  
-  // Process inline code
-  temp.querySelectorAll('code:not(pre code)').forEach(code => {
-    code.className = 'inline-code';
-  });
-  
-  // Process images
-  temp.querySelectorAll('img').forEach(img => {
-    img.style.maxWidth = '100%';
-    img.style.height = 'auto';
-  });
-  
-  // Process links
-  temp.querySelectorAll('a').forEach(link => {
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-  });
-  
-  // Convert markdown-style links to HTML links if not already processed
+
+  // Process markdown-style links into HTML links
   let htmlContent = temp.innerHTML;
   
-  // Convert markdown links [text](url) to HTML links
+  // Convert markdown links
   htmlContent = htmlContent.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   
-  // Convert plain URLs to links if they're not already in an anchor tag
+  // Convert URLs to links
   htmlContent = htmlContent.replace(
-    /(?<!["'=])(https?:\/\/[^\s<>"']+)(?![^<]*>|[^<>]*<\/a>)/g, 
+    /(?<!["'=])(https?:\/\/[^\s<>"']+)/g,
     '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
   );
   
-  // Convert markdown-style bold and italic
+  // Convert basic markdown
   htmlContent = htmlContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   htmlContent = htmlContent.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  // НОВЫЙ КОД: Постобработка для уменьшения пробелов в списках
+  // Удаляем лишние пробелы между тегами списков
+  htmlContent = htmlContent
+    .replace(/>\s+<li/g, '><li')
+    .replace(/<\/li>\s+<li/g, '</li><li')
+    .replace(/<\/li>\s+<\/[uo]l/g, '</li></ul')
+    .replace(/<[uo]l>\s+<li/g, '<ul><li')
+    .replace(/<\/[uo]l>\s+<[uo]l/g, '</ul><ul');
   
   return htmlContent;
 }
@@ -501,19 +534,58 @@ function createMessageElement(message) {
   
   const header = document.createElement('div');
   header.className = 'message-header';
-  header.textContent = message.role === 'user' ? 'You' : 'Assistant';
+  
+  // Set the header text based on role
+  if (message.role === 'user') {
+    header.textContent = 'You';
+  } else {
+    header.textContent = 'Assistant';
+  }
   
   // Add source indicator if available
   if (message.metadata && message.metadata.source) {
     const sourceIndicator = document.createElement('span');
     sourceIndicator.className = `chat-source-indicator ${message.metadata.source}`;
-    sourceIndicator.textContent = message.metadata.source === 'deepseek' ? 'DeepSeek' : 'Google AI';
+    
+    // Set the appropriate text based on the source
+    if (message.metadata.source === 'deepseek') {
+      sourceIndicator.textContent = 'DeepSeek';
+    } else if (message.metadata.source === 'google-ai') {
+      sourceIndicator.textContent = 'Google AI';
+    } else if (message.metadata.source === 'chatgpt') {
+      sourceIndicator.textContent = 'ChatGPT';
+    } else if (message.metadata.source === 'grok') {
+      sourceIndicator.textContent = 'Grok';
+    }
+    
     header.appendChild(sourceIndicator);
   }
   
   const content = document.createElement('div');
   content.className = 'message-content';
-  content.innerHTML = message.html || message.content;
+  
+  // Очистка HTML от кнопок
+  if (message.html) {
+    // Создаем временный div для обработки HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = message.html;
+    
+    // Удаляем все button элементы
+    const buttons = tempDiv.querySelectorAll('button');
+    buttons.forEach(button => button.remove());
+    
+    // Удаляем все элементы с role="button"
+    const roleButtons = tempDiv.querySelectorAll('[role="button"]');
+    roleButtons.forEach(button => button.remove());
+    
+    // Удаляем все элементы с классами, содержащими слово "button"
+    const classButtons = tempDiv.querySelectorAll('[class*="button"]');
+    classButtons.forEach(button => button.remove());
+    
+    content.innerHTML = tempDiv.innerHTML;
+  } else {
+    content.textContent = message.content || '';
+  }
   
   messageDiv.appendChild(header);
   messageDiv.appendChild(content);
@@ -561,7 +633,7 @@ async function generateAndDisplaySummary() {
       type: 'GENERATE_TEXT',
       prompt: prompt,
       provider: settings.provider,
-      model: settings.model,
+      model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model, // Force use known working model for Google
       apiKey: settings.apiKeys[settings.provider]
     });
 
@@ -686,7 +758,7 @@ async function generateAndDisplaySummary() {
 }
 
 function showChatHistory(tabId, favorite) {
-  // Store the current favorite being viewed
+  // Store the favorite for later use with the summary feature
   currentViewingFavorite = favorite;
   
   const chatHistoryWindow = document.getElementById('chatHistoryWindow');
@@ -698,7 +770,6 @@ function showChatHistory(tabId, favorite) {
   // Clear previous content
   modalContent.innerHTML = '';
   
-  // Check if there's a summary and display it
   if (favorite.summary) {
     // Use sanitizeAndRenderHTML to render HTML content safely
     summaryContent.innerHTML = sanitizeAndRenderHTML(favorite.summary);
@@ -708,13 +779,26 @@ function showChatHistory(tabId, favorite) {
   }
   
   if (favorite.messages && favorite.messages.length > 0) {
-    favorite.messages.forEach(message => {
-      const messageElement = createMessageElement(message);
+    let displayMessages = [];
+    
+    // Process messages based on the source
+    if (favorite.metadata && favorite.metadata.source === 'grok') {
+      // For Grok chats, use the messages directly instead of trying to parse them
+      // Each message already has the correct role and content from getGrokChatContent
+      displayMessages = favorite.messages;
+    } else {
+      // For other chat sources, use original messages
+      displayMessages = favorite.messages;
+    }
+    
+    // Create message elements
+    displayMessages.forEach(message => {
+      const messageElement = createMessageElement(message, favorite.metadata ? favorite.metadata.source : null);
       modalContent.appendChild(messageElement);
     });
     
-    // Add last updated info if available
-    if (favorite.metadata?.lastUpdated) {
+    // Show last updated info if available
+    if (favorite.metadata && favorite.metadata.lastUpdated) {
       const lastUpdated = document.createElement('div');
       lastUpdated.className = 'last-updated';
       lastUpdated.textContent = `Last updated: ${new Date(favorite.metadata.lastUpdated).toLocaleString()}`;
@@ -727,8 +811,23 @@ function showChatHistory(tabId, favorite) {
   // Show chat history window
   chatHistoryWindow.classList.add('show');
   
-  // Make the window draggable
+  // Make window draggable
   makeDraggable(chatHistoryWindow);
+  
+  // Функция для форматирования сообщений после их добавления в DOM
+  function formatMessageContent() {
+    const listContainers = modalContent.querySelectorAll('ul, ol');
+    listContainers.forEach(list => {
+      // Удаляем пробелы между элементами списка
+      list.innerHTML = list.innerHTML
+        .replace(/>\s+<li/g, '><li')
+        .replace(/<\/li>\s+<li/g, '</li><li')
+        .replace(/<\/li>\s+<\/[uo]l/g, '</li></ul');
+    });
+  }
+  
+  // Запустим форматирование после добавления всех сообщений
+  setTimeout(formatMessageContent, 100);
 }
 
 // Function to make an element draggable
@@ -830,11 +929,25 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
   
   if (sortedTags.length === 0) return;
   
+  // Get current search query to check for active tags
+  const searchInput = document.getElementById(searchInputId);
+  const currentQuery = searchInput ? searchInput.value.trim() : '';
+  
+  // Extract all hashtags from the current query
+  const hashtagRegex = /#[^\s#]+/g;
+  const existingHashtags = (currentQuery.match(hashtagRegex) || [])
+    .map(tag => tag.slice(1).toLowerCase().trim());
+  
   // Create and append tag elements
   sortedTags.forEach(([tag, frequency]) => {
     const tagElement = document.createElement('span');
     tagElement.className = 'tag clickable';
     tagElement.textContent = tag;
+    
+    // Pre-check if the tag is active based on search query
+    if (existingHashtags.includes(tag.toLowerCase())) {
+      tagElement.classList.add('active');
+    }
     
     // Add click handler to filter by this tag
     tagElement.addEventListener('click', () => {
@@ -846,12 +959,14 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
         // Add # to tag
         const tagWithHash = `#${tag}`;
         
-        // If the tag is already in the search query (with #), remove it (toggle behavior)
-        if (currentQuery.includes(tagWithHash)) {
-          // Remove the tag from the query
-          const words = currentQuery.split(/\s+/);
-          const filteredWords = words.filter(word => word.toLowerCase() !== tagWithHash.toLowerCase());
-          currentQuery = filteredWords.join(' ');
+        // Check if the tag is already in the search query using the existingHashtags
+        const tagAlreadyInSearch = currentQuery.toLowerCase().includes(tagWithHash.toLowerCase());
+        
+        // Prevent class toggling before updating query - this helps avoid flicker
+        if (tagAlreadyInSearch) {
+          // Remove the tag if it's already in the search
+          // Need to use replace with the exact tag to handle multi-word tags
+          currentQuery = currentQuery.replace(new RegExp(tagWithHash.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1"), 'i'), '').trim();
           searchInput.value = currentQuery;
           tagElement.classList.remove('active');
         } else {
@@ -861,8 +976,11 @@ function displayFrequentTags(containerId, tagFrequencies, searchInputId, loadFun
           tagElement.classList.add('active');
         }
         
-        // Trigger the search with the updated query
-        loadFunction(searchInput.value.trim());
+        // Trigger the search with the updated query - this will also update active states
+        // Wrap in setTimeout to avoid re-triggering active state logic
+        setTimeout(() => {
+          loadFunction(searchInput.value.trim());
+        }, 0);
       }
     });
     
@@ -935,6 +1053,9 @@ async function loadFavorites(searchQuery = '', retryCount = 3) {
       console.debug('Failed to load tag frequencies:', tagError);
     }
     
+    // Skip the additional active state updating - displayFrequentTags already handles this
+    // This prevents the flickering effect when clicking on tags
+    
     // Handle empty favorites case
     if (favorites.length === 0) {
       favoritesList.innerHTML = '<div class="no-items">No favorite chats yet</div>';
@@ -966,23 +1087,40 @@ function filterFavoritesByQuery(favorites, searchQuery) {
     return favorites;
   }
   
-  // Split search query into hashtags and regular words
-  const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
-  const hashtagWords = searchWords.filter(word => word.startsWith('#')).map(tag => tag.slice(1)); // Remove # from tags
-  const regularWords = searchWords.filter(word => !word.startsWith('#'));
+  // Extract hashtags from the search query - match only the tag itself, not words after it
+  const hashtagRegex = /#[^\s#]+/g;
+  const hashtags = (searchQuery.match(hashtagRegex) || [])
+    .map(tag => tag.slice(1).toLowerCase().trim());
   
-  return favorites.filter(f => {
-    // If we have hashtags, check if ALL hashtags match tags exactly
-    if (hashtagWords.length > 0) {
-      const favoriteTags = (f.tags || []).map(tag => tag.toLowerCase());
-      const allHashtagsMatch = hashtagWords.every(hashtagWord => 
-        favoriteTags.some(tag => tag.includes(hashtagWord))
+  // Get remaining non-hashtag words
+  let remainingQuery = searchQuery;
+  if (hashtags.length > 0) {
+    // Remove hashtags from the search query
+    hashtags.forEach(tag => {
+      remainingQuery = remainingQuery.replace('#' + tag, '');
+    });
+  }
+  
+  // Get remaining words after removing hashtags
+  const regularWords = remainingQuery.toLowerCase().split(/\s+/).filter(word => word);
+  
+  console.log('Favorites search - Hashtags:', hashtags);
+  console.log('Favorites search - Regular words:', regularWords);
+  
+  // First filter by hashtags - this is the primary filter
+  let filteredByTags = favorites;
+  if (hashtags.length > 0) {
+    filteredByTags = favorites.filter(f => {
+      const favoriteTags = (f.tags || []).map(tag => tag.toLowerCase().trim());
+      return hashtags.every(hashtagWord => 
+        favoriteTags.some(tag => tag === hashtagWord)
       );
-      if (!allHashtagsMatch) return false;
-    }
-    
-    // If we have regular words, check if ALL words match any field (including tags)
-    if (regularWords.length > 0) {
+    });
+  }
+  
+  // Then filter the tag-filtered results by regular words
+  if (regularWords.length > 0) {
+    return filteredByTags.filter(f => {
       const favoriteTags = (f.tags || []).map(tag => tag.toLowerCase());
       return regularWords.every(word => {
         return f.title?.toLowerCase().includes(word) ||
@@ -996,11 +1134,11 @@ function filterFavoritesByQuery(favorites, searchQuery) {
                  message.html?.toLowerCase().includes(word)
                ));
       });
-    }
-    
-    // If we only had hashtags and they all matched, return true
-    return true;
-  });
+    });
+  }
+  
+  // If we only had hashtags, return the tag-filtered results
+  return filteredByTags;
 }
 
 // Helper function to render favorites
@@ -1188,7 +1326,7 @@ function setupTagsInput(container) {
   if (input.id === 'promptSearchInput' || input.id === 'favoritesSearchInput' || input.id === 'notesSearchInput') return null;
 
   let tags = new Set();
-  const specialTags = ['deepseek', 'gemini', 'chatgpt'];
+  const specialTags = ['deepseek', 'aistudio', 'chatgpt', 'grok', 'claude'];
 
   function addTag(tag) {
     // Clean tag from any remove buttons or special characters
@@ -1531,7 +1669,7 @@ function createPromptElement(prompt) {
         const searchInput = document.getElementById('promptSearchInput');
         if (searchInput) {
           // Clean tag text from any remove buttons or special characters
-          const cleanTag = tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase();
+          const cleanTag = tag.replace(/[×✕✖✗✘]/g, '').trim();
           console.log('Clicked tag:', cleanTag);
           
           // Get current search query
@@ -1542,13 +1680,19 @@ function createPromptElement(prompt) {
           const tagWithHash = `#${cleanTag}`;
           console.log('Tag with hash:', tagWithHash);
           
-          if (currentQuery.toLowerCase().includes(tagWithHash.toLowerCase())) {
+          // Extract all hashtags from the current query to check if this one already exists
+          const hashtagRegex = /#[^\s#]+(?:\s+[^\s#]+)*/g;
+          const existingHashtags = currentQuery.match(hashtagRegex) || [];
+          
+          // Check if the exact tag (case insensitive) is already in the search
+          const tagAlreadyInSearch = existingHashtags.some(hashtag => 
+            hashtag.toLowerCase() === tagWithHash.toLowerCase()
+          );
+          
+          if (tagAlreadyInSearch) {
             // Remove the tag if it's already in the search
-            const words = currentQuery.split(/\s+/);
-            const filteredWords = words.filter(word => 
-              word.toLowerCase() !== tagWithHash.toLowerCase()
-            );
-            currentQuery = filteredWords.join(' ');
+            // Need to use replace with the exact tag to handle multi-word tags
+            currentQuery = currentQuery.replace(new RegExp(tagWithHash.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1"), 'i'), '').trim();
             searchInput.value = currentQuery;
             tagSpan.classList.remove('active');
             console.log('Removed tag, new query:', currentQuery);
@@ -1710,51 +1854,74 @@ async function loadPrompts(searchQuery = '', retryCount = 3) {
       return;
     }
     
+    // Load tag frequencies if available
+    try {
+      const tagFrequencies = await getCombinedTagFrequencies('prompts');
+      displayFrequentTags('promptFrequentTags', tagFrequencies, 'promptSearchInput', loadPrompts);
+    } catch (tagError) {
+      console.debug('Failed to load prompt tag frequencies:', tagError);
+    }
+    
     // Enhanced filtering with tag-based search
-    const filteredPrompts = searchQuery 
-      ? prompts.filter(p => {
-          // Split search query into words and handle tag-based search
-          const searchWords = searchQuery.toLowerCase().split(/\s+/).filter(word => word);
+    let filteredPrompts = prompts;
+    
+    if (searchQuery) {
+      // Extract hashtags from the search query - match only the tag itself, not words after it
+      const hashtagRegex = /#[^\s#]+/g;
+      const hashtags = (searchQuery.match(hashtagRegex) || [])
+        .map(tag => tag.slice(1).toLowerCase().trim());
+      
+      // Get remaining non-hashtag words
+      let remainingQuery = searchQuery;
+      if (hashtags.length > 0) {
+        // Remove hashtags from the search query
+        hashtags.forEach(tag => {
+          remainingQuery = remainingQuery.replace('#' + tag, '');
+        });
+      }
+      
+      // Get remaining words after removing hashtags
+      const normalWords = remainingQuery.toLowerCase().split(/\s+/).filter(word => word);
+      
+      console.log('Prompts search - Hashtags:', hashtags);
+      console.log('Prompts search - Regular words:', normalWords);
+      
+      // First filter by hashtags - this is the primary filter
+      if (hashtags.length > 0) {
+        filteredPrompts = prompts.filter(p => {
+          // Make sure tags exist and is an array
+          if (!p.tags || !Array.isArray(p.tags)) {
+            return false;
+          }
           
-          console.log('Search words:', searchWords);
-          console.log('Prompt tags:', p.tags);
+          // Clean and lowercase all prompt tags for comparison
+          const promptTags = p.tags.map(tag => tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase());
           
-          return searchWords.every(word => {
-            if (word.startsWith('#')) {
-              // For tag searches, remove the # and check if the prompt has the tag
-              const tagToSearch = word.slice(1).toLowerCase();
-              console.log('Searching for tag:', tagToSearch);
-              
-              // Make sure tags exist and is an array
-              if (!p.tags || !Array.isArray(p.tags)) {
-                console.log('No tags found for prompt');
-                return false;
-              }
-              
-              // Clean and lowercase all prompt tags for comparison
+          // Check if all search hashtags are found in the prompt tags
+          return hashtags.every(hashtagWord => promptTags.some(tag => tag === hashtagWord));
+        });
+      }
+      
+      // Then filter the tag-filtered results by regular words
+      if (normalWords.length > 0) {
+        filteredPrompts = filteredPrompts.filter(p => {
+          return normalWords.every(word => {
+            // For non-tag words, check title, text and tags
+            const titleMatch = p.title?.toLowerCase().includes(word) || false;
+            const textMatch = p.text.toLowerCase().includes(word);
+            
+            // Check tags if they exist
+            let tagMatch = false;
+            if (p.tags && Array.isArray(p.tags)) {
               const promptTags = p.tags.map(tag => tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase());
-              console.log('Prompt tags after cleaning:', promptTags);
-              
-              const hasTag = promptTags.includes(tagToSearch);
-              console.log('Tag found?', hasTag);
-              return hasTag;
-            } else {
-              // For non-tag words, check title, text and tags
-              const titleMatch = p.title?.toLowerCase().includes(word) || false;
-              const textMatch = p.text.toLowerCase().includes(word);
-              
-              // Check tags if they exist
-              let tagMatch = false;
-              if (p.tags && Array.isArray(p.tags)) {
-                const promptTags = p.tags.map(tag => tag.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase());
-                tagMatch = promptTags.some(tag => tag.includes(word));
-              }
-              
-              return titleMatch || textMatch || tagMatch;
+              tagMatch = promptTags.some(tag => tag.includes(word));
             }
+            
+            return titleMatch || textMatch || tagMatch;
           });
-        })
-      : prompts;
+        });
+      }
+    }
 
     console.log('Filtered prompts:', filteredPrompts.length);
 
@@ -1818,7 +1985,7 @@ const setupSearchInputs = () => {
     newInput.type = 'text';
     newInput.id = 'promptSearchInput';
     newInput.className = 'search-input';
-    newInput.placeholder = 'Search prompts...';
+    newInput.placeholder = 'Search by tags and words...';
     newInput.setAttribute('autocomplete', 'off');
     newInput.setAttribute('role', 'textbox');
     
@@ -1842,7 +2009,7 @@ const setupSearchInputs = () => {
     newInput.type = 'text';
     newInput.id = 'favoritesSearchInput';
     newInput.className = 'search-input';
-    newInput.placeholder = 'Search favorites...';
+    newInput.placeholder = 'Search by tags and words...';
     newInput.setAttribute('autocomplete', 'off');
     newInput.setAttribute('role', 'textbox');
     
@@ -3321,7 +3488,7 @@ const DEFAULT_SETTINGS = {
     google: ''
   },
   model: '',
-  titlePrompt: 'Come up with a great expanded title for this article fully reflecting its essence, the title should be in the same language as the article, up to 70 characters, no tags, no highlighting characters:{text}',
+  titlePrompt: 'Come up with a great expanded title for this article fully reflecting its essence, the title should be in the same language as the article, up to 70 characters, no tags, no highlighting characters, no quotation marks at the beginning and end of the title:{text}',
   summaryPrompt: 'Generate a concise summary of this chat conversation in 3-4 sentences. No more than 300 characters. No mention of the user or the assistant. Just the most important thing, the very essence of the chat. You don\'t need introductory words. Just the gist. The problem and its solution. You don\'t need introductory words about what the user was interested in and who answered him. Highlight only the important points in html format using the html tags <b> and </b>, but not all of the text. Don\'t use the word summary or similar at the beginning of the summary. No introductory words or titles before summary. Summarize should be in the language in which most of the chat is written. If there is even a bit of text in Russian, summarize should be in Russian. Ignore the message: "The server is busy. Please try again later." When you make a summary, don\'t write about the need for a doctor\'s consultation. Don\'t use markdown. Convey the most important point:{text}',
   tagsPrompt: 'Generate 1-3 relevant tags for this chat. Rules: 1. Each tag should be 1-2 words, separated by spaces. Always separate two words in the same tag with a hyphen. No more than two words can be separated by a hyphen. 2. Tags should reflect the main topics, technologies, or concepts discussed. 3. If the chat has anything to do with programming or programs or software, your first tag should be: programming. 4. If the chat has anything to do with artificial intelligence, your first tag should be ai, and then the second tag should be the name of that ai. 5. If the chat has anything to do with a large language machine or a chatbot or something similar, then your first tag should be: llm, followed by the name of that chatbot. 6. If the chat has something to do with health, treatment, gymnastics, fitness improvement, recipes for health, then the first tag should be the word health. 7. Return only the tags without quotes or commas:{text}'
 };
@@ -3329,16 +3496,16 @@ const DEFAULT_SETTINGS = {
 // Models available for each provider
 const PROVIDER_MODELS = {
   openrouter: [
-    { id: 'google/gemini-2.0-flash-001', name: 'gemini-2.0-flash-001' },
+    { id: 'google/gemini-2.0-flash-001', name: 'gemini-2.0-flash' },
     { id: 'deepseek/deepseek-chat', name: 'DeepSeek-V3' },
     { id: 'openai/gpt-4o-mini', name: 'GPT-4o mini' },
     { id: 'meta-llama/llama-3.3-70b-instruct', name: 'The Meta Llama 3.3' }
   ],
   google: [
-    { id: 'gemini-2.0-flash-001', name: 'gemini-2.0-flash' },
-    { id: 'gemini-2.0-pro-exp-02-05', name: 'gemini-2.0-pro' },
-    { id: 'gemini-2.0-flash-thinking-exp-01-21', name: 'gemini-2.0-flash-thinking-exp' },
-    { id: 'gemini-2.0-flash-exp', name: 'gemini-2.0-flash-exp' }
+    { id: 'models/gemini-2.0-flash-001', name: 'gemini-2.0-flash' },
+    { id: 'models/gemini-2.0-pro-exp-02-05', name: 'gemini-2.0-pro' },
+    { id: 'models/gemini-2.0-flash-thinking-exp-01-21', name: 'gemini-2.0-flash-thinking-exp' },
+    { id: 'models/gemini-2.0-flash-exp', name: 'gemini-2.0-flash-exp' }
   ]
 };
 
@@ -3347,6 +3514,33 @@ async function loadSettings() {
   return new Promise((resolve) => {
     chrome.storage.sync.get('settings', (result) => {
       const settings = result.settings || DEFAULT_SETTINGS;
+      
+      // Migrate old Google AI models to new ones
+      if (settings.provider === 'google') {
+        // Map old model IDs to new ones
+        const modelMigrationMap = {
+          'aistudio-2.0-flash-001': 'models/gemini-2.0-flash-001',
+          'aistudio-2.0-pro-exp-02-05': 'models/gemini-2.0-pro-exp-02-05',
+          'aistudio-2.0-flash-thinking-exp-01-21': 'models/gemini-2.0-flash-thinking-exp-01-21',
+          'aistudio-2.0-flash-exp': 'models/gemini-2.0-flash-exp',
+          'gemini-1.0-pro': 'models/gemini-2.0-flash-001',
+          'gemini-1.5-flash': 'models/gemini-2.0-flash-001',
+          'gemini-1.5-pro': 'models/gemini-2.0-pro-exp-02-05',
+          'gemini-pro-vision': 'models/gemini-2.0-flash-001'
+        };
+        
+        // Replace old model ID with new one if applicable
+        if (modelMigrationMap[settings.model]) {
+          settings.model = modelMigrationMap[settings.model];
+          // Save the migrated settings back to storage
+          saveSettings(settings);
+        } else if (settings.model && !settings.model.startsWith('models/')) {
+          // If model doesn't start with 'models/' and isn't in migration map, add prefix
+          settings.model = 'models/' + settings.model;
+          saveSettings(settings);
+        }
+      }
+      
       resolve(settings);
     });
   });
@@ -3889,7 +4083,7 @@ async function initSettingsModal() {
         type: 'GENERATE_TEXT',
         prompt: prompt,
         provider: settings.provider,
-        model: settings.model,
+        model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model, // Force use known working model for Google
         apiKey: settings.apiKeys[settings.provider]
       });
 
@@ -4451,7 +4645,7 @@ async function generateTagsWithAI(favorite) {
       settings: {
         provider: settings.provider,
         apiKey: settings.apiKeys[settings.provider],
-        model: settings.model
+        model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model // Force use known working model for Google
       }
     });
 
@@ -4464,7 +4658,7 @@ async function generateTagsWithAI(favorite) {
     const existingTags = tagsContainer.querySelectorAll('.tag');
     
     // Get special tags that we want to preserve
-    const specialTags = ['deepseek', 'gemini', 'chatgpt'];
+    const specialTags = ['deepseek', 'aistudio', 'chatgpt', 'grok', 'claude', 'gemini'];
     const preservedTags = Array.from(existingTags)
       .map(tag => tag.textContent.replace(/[×✕✖✗✘]/g, '').trim().toLowerCase())
       .filter(tag => specialTags.includes(tag));
@@ -4709,7 +4903,7 @@ async function generateDescriptionWithAI(favorite) {
       type: 'GENERATE_TEXT',
       prompt: prompt,
       provider: settings.provider,
-      model: settings.model,
+      model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model, // Force use known working model for Google
       apiKey: settings.apiKeys[settings.provider]
     });
 

@@ -243,7 +243,11 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ['page', 'selection'],
       documentUrlPatterns: [
         'https://chat.deepseek.com/*',
-        'https://aistudio.google.com/*'
+        'https://aistudio.google.com/*',
+        'https://chatgpt.com/*',
+        'https://grok.com/*',
+        'https://claude.ai/*',
+        'https://gemini.google.com/*'
       ]
     }, () => {
       if (chrome.runtime.lastError) {
@@ -320,6 +324,83 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SHOW_CONTEXT_MENU') {
       console.log('Received context menu data:', message.data);
       sendResponse({ status: 'ok' });
+      return true;
+    }
+    
+    // Handle add to favorites message from button click
+    if (message.type === 'ADD_TO_FAVORITES') {
+      (async () => {
+        try {
+          console.log('Attempting to add to favorites from button click');
+          
+          // Ensure database is initialized
+          await favoritesDB.ensureInitialized();
+          
+          if (!message.data || message.data.status !== 'ok') {
+            throw new Error(message.data?.error || 'Invalid chat data');
+          }
+          
+          // Format current date
+          const now = new Date();
+          const formattedDate = now.toLocaleString('ru-RU', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          
+          const favorite = {
+            id: Date.now().toString(),
+            title: message.data.title,
+            url: sender.tab.url,
+            timestamp: formattedDate,
+            date: now.toISOString(),
+            messages: message.data.messages,
+            metadata: {
+              ...message.data.metadata,
+              savedAt: formattedDate
+            }
+          };
+          
+          // Add tags based on URL
+          favorite.tags = [];
+          if (sender.tab.url.includes('aistudio.google.com')) {
+            favorite.tags.push('aistudio');
+          } else if (sender.tab.url.includes('chat.deepseek.com')) {
+            favorite.tags.push('deepseek');
+          } else if (sender.tab.url.includes('chatgpt.com')) {
+            favorite.tags.push('chatgpt');
+          } else if (sender.tab.url.includes('grok.com')) {
+            favorite.tags.push('grok');
+          } else if (sender.tab.url.includes('claude.ai')) {
+            favorite.tags.push('claude');
+          } else if (sender.tab.url.includes('gemini.google.com')) {
+            favorite.tags.push('gemini');
+          }
+          
+          console.log('Created favorite object:', favorite);
+          
+          // Check if already in favorites
+          const favorites = await favoritesDB.getFavorites();
+          const exists = favorites.some(f => f.url === favorite.url);
+          
+          if (!exists) {
+            await favoritesDB.addFavorite(favorite);
+            console.log('Successfully added to favorites');
+            sendResponse({ status: 'ok' });
+          } else {
+            console.log('Chat already in favorites');
+            sendResponse({ status: 'error', error: 'Already in favorites' });
+          }
+        } catch (error) {
+          console.error('Error in ADD_TO_FAVORITES:', error);
+          sendResponse({ status: 'error', error: error.message });
+        }
+      })();
+      
+      // Signal that response will be sent asynchronously
       return true;
     }
     
@@ -539,32 +620,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   
   if (info.menuItemId === 'addToFavorites') {
     try {
-      console.log('Attempting to add to favorites for tab:', tab.id);
+      console.log('Add to favorites clicked, tab URL:', tab.url);
+      
+      // Validate URL is from one of our supported sites
+      if (!tab.url.includes('chat.deepseek.com') && 
+          !tab.url.includes('aistudio.google.com') && 
+          !tab.url.includes('chatgpt.com') &&
+          !tab.url.includes('grok.com') &&
+          !tab.url.includes('claude.ai') &&
+          !tab.url.includes('gemini.google.com')) {
+        throw new Error('Unsupported website');
+      }
       
       // Ensure database is initialized
       await favoritesDB.ensureInitialized();
       
-      // Inject content script if not already injected
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['content.js']
-        });
-        console.log('Content script injected successfully');
-      } catch (error) {
-        console.log('Content script already injected or injection failed:', error);
-      }
-      
-      // Get chat info from content script
-      console.log('Requesting chat info from content script...');
-      const response = await chrome.tabs.sendMessage(tab.id, { 
-        type: 'GET_CHAT_INFO'
-      }).catch(error => {
-        console.error('Error sending message to content script:', error);
-        throw new Error('Failed to communicate with page. Please refresh and try again.');
-      });
-      
-      console.log('Received response from content script:', response);
+      // Get chat content from content script
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CHAT_INFO' });
       
       if (response && response.status === 'ok') {
         // Format current date
@@ -594,9 +666,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         // Add tags based on URL
         favorite.tags = [];
         if (tab.url.includes('aistudio.google.com')) {
-          favorite.tags.push('gemini');
+          favorite.tags.push('aistudio');
         } else if (tab.url.includes('chat.deepseek.com')) {
           favorite.tags.push('deepseek');
+        } else if (tab.url.includes('chatgpt.com')) {
+          favorite.tags.push('chatgpt');
+        } else if (tab.url.includes('grok.com')) {
+          favorite.tags.push('grok');
+        } else if (tab.url.includes('claude.ai')) {
+          favorite.tags.push('claude');
+        } else if (tab.url.includes('gemini.google.com')) {
+          favorite.tags.push('gemini');
         }
 
         console.log('Created favorite object:', favorite);
@@ -653,7 +733,9 @@ async function generateText(message) {
           })
         });
       } else if (provider === 'google') {
-        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        // Extract model name from the model ID (remove 'models/' prefix if present)
+        const modelName = model.replace(/^models\//, '');
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -761,7 +843,9 @@ async function handleTagGeneration(prompt, settings) {
         })
       });
     } else if (settings.provider === 'google') {
-      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`, {
+      // Extract model name from the model ID (remove 'models/' prefix if present)
+      const modelName = settings.model.replace(/^models\//, '');
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${settings.apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
