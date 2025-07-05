@@ -614,6 +614,149 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+// Функция для автоматического обновления информации о чате без popup
+async function autoUpdateChatHistory(favorite) {
+  console.log('Auto-updating chat history for favorite:', favorite.id);
+  
+  let tempTab = null;
+  try {
+    // Создать временную вкладку
+    tempTab = await chrome.tabs.create({ 
+      url: favorite.url, 
+      active: false 
+    });
+
+    console.log('Created temporary tab for auto-update:', tempTab.id, 'with URL:', favorite.url);
+
+    // Дождаться загрузки страницы
+    await new Promise((resolve) => {
+      const listener = function(tabId, info) {
+        if (tabId === tempTab.id && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      
+      // Timeout для безопасности, чтобы не зависнуть в ожидании
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }, 10000); // 10 секунд максимум
+    });
+
+    console.log('Temporary tab loaded, waiting before script injection');
+    
+    // Задержка для инициализации страницы
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    console.log('Injecting content script into temporary tab');
+    
+    // Инъекция скрипта содержимого
+    await chrome.scripting.executeScript({
+      target: { tabId: tempTab.id },
+      files: ['content.js']
+    });
+    
+    console.log('Content script injected, waiting before data retrieval');
+    
+    // Задержка после инъекции
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Пробуем получить содержимое чата с повторными попытками
+    let response = null;
+    let retryCount = 7; // Увеличиваем количество попыток
+    
+    while (retryCount > 0) {
+      try {
+        // Повторная инъекция скрипта содержимого для надежности
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tempTab.id },
+            files: ['content.js']
+          });
+          console.log(`Re-injected content script for attempt ${8 - retryCount}`);
+        } catch (injectionError) {
+          console.warn('Content script re-injection error:', injectionError);
+          // Продолжаем, даже если инъекция не удалась
+        }
+
+        // Задержка после инъекции
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Получение содержимого чата
+        console.log(`Sending GET_CHAT_INFO message to tab ${tempTab.id} (attempt ${8 - retryCount})`);
+        response = await chrome.tabs.sendMessage(tempTab.id, { type: 'GET_CHAT_INFO' });
+        
+        console.log(`Auto-update attempt ${8 - retryCount} response:`, response?.status);
+        
+        if (response && response.status === 'ok' && response.messages && response.messages.length > 0) {
+          console.log(`Auto-update successful with ${response.messages.length} messages`);
+          break;
+        }
+        
+        console.log(`Auto-update attempt ${8 - retryCount} failed or incomplete data, retrying after delay...`);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (error) {
+        console.log(`Auto-update attempt ${8 - retryCount} failed with error:`, error);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+      retryCount--;
+    }
+
+    if (!response || response.status !== 'ok' || !response.messages || response.messages.length === 0) {
+      throw new Error('Failed to get chat content after multiple attempts');
+    }
+
+    console.log('Auto-update received complete data, updating favorite');
+    
+    // Обновляем избранное с новыми сообщениями
+    const updatedFavorite = {
+      ...favorite,
+      messages: response.messages,
+      metadata: {
+        ...favorite.metadata,
+        lastUpdated: new Date().toISOString()
+      }
+    };
+
+    // Сохраняем обновленное избранное
+    await favoritesDB.updateFavorite(updatedFavorite);
+    console.log('Successfully auto-updated favorite with', response.messages.length, 'messages');
+
+    // Отправляем уведомление в content script
+    try {
+      await sendContentNotification(tempTab.id, 'Chat history automatically updated! 🔄');
+    } catch (notificationError) {
+      console.warn('Could not send notification to tab, it might have been closed:', notificationError);
+    }
+
+    // Отправляем сообщение для обновления popup, если он открыт
+    try {
+      chrome.runtime.sendMessage({
+        type: 'REFRESH_FAVORITES'
+      });
+      console.log('Sent refresh message to popup');
+    } catch (refreshError) {
+      console.log('No popup open to refresh:', refreshError);
+    }
+
+  } catch (error) {
+    console.error('Error in autoUpdateChatHistory:', error);
+  } finally {
+    // Закрываем временную вкладку
+    if (tempTab && tempTab.id) {
+      try {
+        console.log('Closing temporary tab:', tempTab.id);
+        await chrome.tabs.remove(tempTab.id);
+        console.log('Successfully closed temporary tab for auto-update');
+      } catch (error) {
+        console.error('Error closing temporary tab:', error);
+      }
+    }
+  }
+}
+
 // Update context menu handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   console.log('Context menu clicked:', info.menuItemId);
@@ -634,9 +777,54 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       
       // Ensure database is initialized
       await favoritesDB.ensureInitialized();
+
+      // Инъекция content script для гарантии его доступности
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      });
+
+      // Небольшая задержка после инъекции для инициализации скрипта
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Get chat content from content script
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CHAT_INFO' });
+      // Логика с повторными попытками, похожая на кнопку "Update Chat"
+      let response = null;
+      let retryCount = 5; // Увеличенное количество попыток
+      
+      while (retryCount > 0) {
+        try {
+          // Повторная инъекция content script для надежности
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+          });
+
+          // Небольшая задержка после инъекции
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Попытка получить содержимое чата
+          response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CHAT_INFO' });
+          
+          console.log(`Context menu - attempt ${6 - retryCount}`, response);
+          
+          // Проверка полноты данных
+          if (response && response.status === 'ok' && response.messages && response.messages.length > 0) {
+            console.log(`Got response with ${response.messages.length} messages`);
+            break;
+          }
+          
+          console.log(`Attempt ${6 - retryCount} failed or incomplete data, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.log(`Attempt ${6 - retryCount} failed:`, error);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        retryCount--;
+      }
+      
+      if (!response || response.status !== 'ok' || !response.messages || response.messages.length === 0) {
+        throw new Error('Failed to get chat content after multiple attempts');
+      }
       
       if (response && response.status === 'ok') {
         // Format current date
@@ -679,19 +867,152 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           favorite.tags.push('gemini');
         }
 
-        console.log('Created favorite object:', favorite);
-
+        console.log('Created favorite object with', favorite.messages.length, 'messages');
+        
         // Check if already in favorites
         const favorites = await favoritesDB.getFavorites();
         const exists = favorites.some(f => f.url === favorite.url);
-
+        
+        let savedFavorite = null;
+        
         if (!exists) {
-          await favoritesDB.addFavorite(favorite);
-          console.log('Successfully added to favorites');
-          await sendContentNotification(tab.id, 'Added to Favorites! ⭐');
+          // Check if autoGenerateMetadata is enabled
+          let settings = await getSettings();
+          let shouldAutoGenerate = settings && settings.autoGenerateMetadata;
+          
+          // If no auto-generation, just save normally
+          if (!shouldAutoGenerate) {
+            await favoritesDB.addFavorite(favorite);
+            console.log('Successfully added to favorites');
+            await sendContentNotification(tab.id, 'Added to Favorites! ⭐');
+            savedFavorite = favorite;
+          } else {
+            // First notify that we're adding with auto-generation
+            await sendContentNotification(tab.id, 'Adding to Favorites with auto-generation... ⌛');
+            
+            try {
+              // Save first to get an ID
+              await favoritesDB.addFavorite(favorite);
+              savedFavorite = favorite;
+              
+              // Prepare chat history text
+              const chatHistory = favorite.messages
+                ?.map(msg => `${msg.role}: ${msg.content}`)
+                .join('\n\n') || '';
+              
+              if (!chatHistory) {
+                throw new Error('No chat history available for generation');
+              }
+              
+              // Auto-generate title
+              const titlePrompt = `${settings.titlePrompt || 'Generate a concise and descriptive title for this chat conversation.'}\n\nChat History:\n${chatHistory}`;
+              const titleResponse = await generateText({
+                prompt: titlePrompt,
+                provider: settings.provider,
+                model: settings.model,
+                apiKey: settings.apiKeys[settings.provider]
+              });
+              
+              if (titleResponse.status === 'ok') {
+                const title = titleResponse.text.trim();
+                favorite.title = title;
+                console.log('Generated title:', title);
+                // Update notification
+                await sendContentNotification(tab.id, 'Generating title... ✓');
+              }
+              
+              // Small delay between generations
+              await new Promise(resolve => setTimeout(resolve, 250));
+              
+              // Auto-generate description
+              const summaryPrompt = `${settings.summaryPrompt || 'Generate a concise description or summary for this chat conversation.'}\n\nChat History:\n${chatHistory}`;
+              const summaryResponse = await generateText({
+                prompt: summaryPrompt,
+                provider: settings.provider,
+                model: settings.model,
+                apiKey: settings.apiKeys[settings.provider]
+              });
+              
+              if (summaryResponse.status === 'ok') {
+                const description = summaryResponse.text.trim();
+                favorite.description = description;
+                favorite.summary = description;
+                console.log('Generated description:', description);
+                // Update notification
+                await sendContentNotification(tab.id, 'Generating description... ✓');
+              }
+              
+              // Small delay between generations
+              await new Promise(resolve => setTimeout(resolve, 250));
+              
+              // Auto-generate tags
+              const tagsPrompt = `${settings.tagsPrompt || 'Generate 3-5 tags for this chat conversation.'}\n\nChat History:\n${chatHistory}`;
+              const tagsResponse = await generateText({
+                prompt: tagsPrompt,
+                provider: settings.provider,
+                model: settings.model,
+                apiKey: settings.apiKeys[settings.provider]
+              });
+              
+              if (tagsResponse.status === 'ok') {
+                const tagsText = tagsResponse.text.trim();
+                // Обработка тегов перед возвращением результата
+                // Split by commas and clean up
+                const processedTags = tagsText.split(/[,\s]+/)
+                  .map(tag => tag.trim().toLowerCase())
+                  .filter(tag => tag && tag.length > 0)
+                  .map(tag => {
+                    // Проверяем и корректируем формат тегов
+                    const words = tag.split(/\s+/);
+                    // Если больше двух слов, берем только первые два
+                    if (words.length > 2) {
+                      return words.slice(0, 2).join('-');
+                    } else if (words.length === 2) {
+                      // Если два слова, соединяем их дефисом
+                      return words.join('-');
+                    }
+                    // Одно слово или уже с дефисом оставляем как есть
+                    return tag;
+                  })
+                  .join(', '); // Возвращаем как строку с разделителями-запятыми
+                
+                // Add the generated tags to the existing tags
+                favorite.tags = [...favorite.tags, ...processedTags.split(', ').map(tag => tag.trim())];
+                console.log('Generated tags:', processedTags.split(', ').map(tag => tag.trim()));
+                // Update notification
+                await sendContentNotification(tab.id, 'Generating tags... ✓');
+              }
+              
+              // Update the favorite with all generated data
+              favorite.metadata.autoGenerated = true;
+              await favoritesDB.updateFavorite(favorite);
+              
+              // Final notification
+              await sendContentNotification(tab.id, 'Added to Favorites with auto-generated metadata! ⭐');
+            } catch (error) {
+              console.error('Error in auto-generation:', error);
+              await sendContentNotification(tab.id, 'Error in auto-generation, saved with basic info. ⚠️');
+            }
+          }
         } else {
           console.log('Chat already in favorites');
           await sendContentNotification(tab.id, 'Already in Favorites! 🔔', true);
+          
+          savedFavorite = favorites.find(f => f.url === favorite.url);
+        }
+        
+        // Для Google AI Studio автоматически обновить чат
+        if (savedFavorite && tab.url.includes('aistudio.google.com')) {
+          console.log('Google AI Studio detected, auto-updating chat history without popup');
+          
+          // Показать уведомление о начале обновления чата
+          await sendContentNotification(tab.id, 'Updating chat history, please wait... ⌛');
+          
+          // Вызвать функцию для автоматического обновления чата без popup
+          // с небольшой задержкой чтобы пользователь увидел уведомление
+          setTimeout(() => {
+            autoUpdateChatHistory(savedFavorite);
+          }, 300);  // Уменьшаем задержку для более быстрого обновления
         }
       } else {
         throw new Error(response?.error || 'Failed to get chat info');
@@ -702,6 +1023,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 });
+
+// Helper function to get settings
+async function getSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get('settings', (result) => {
+      resolve(result.settings || {});
+    });
+  });
+}
 
 // Function to generate text using AI API
 async function generateText(message) {
@@ -883,7 +1213,27 @@ async function handleTagGeneration(prompt, settings) {
       throw new Error('No tags generated');
     }
 
-    return { status: 'ok', tags };
+    // Обработка тегов перед возвращением результата
+    // Split by commas and clean up
+    const processedTags = tags.split(/[,\s]+/)
+      .map(tag => tag.trim().toLowerCase())
+      .filter(tag => tag && tag.length > 0)
+      .map(tag => {
+        // Проверяем и корректируем формат тегов
+        const words = tag.split(/\s+/);
+        // Если больше двух слов, берем только первые два
+        if (words.length > 2) {
+          return words.slice(0, 2).join('-');
+        } else if (words.length === 2) {
+          // Если два слова, соединяем их дефисом
+          return words.join('-');
+        }
+        // Одно слово или уже с дефисом оставляем как есть
+        return tag;
+      })
+      .join(', '); // Возвращаем как строку с разделителями-запятыми
+
+    return { status: 'ok', tags: processedTags };
   } catch (error) {
     console.error('Error generating tags:', error);
     return { status: 'error', error: error.message };

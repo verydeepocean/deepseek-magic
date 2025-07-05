@@ -57,65 +57,8 @@ function createIsolatedContainer() {
 }
 
 // Function to add "Add to Favorites" button to ChatGPT interface
-function addFavoriteButtonToChatGPT() {
-  // Check if we're on ChatGPT
-  if (!isChatGPT()) return;
-  
-  // Check if button already exists
-  if (document.getElementById('deepseek-add-favorite-btn')) return;
-  
-  // Find the header element where we'll add our button
-  const headerElement = document.querySelector('header');
-  if (!headerElement) {
-    console.log('ChatGPT header element not found');
-    return;
-  }
-  
-  // Create button
-  const favoriteButton = document.createElement('button');
-  favoriteButton.id = 'deepseek-add-favorite-btn';
-  favoriteButton.innerHTML = '⭐ Add to Favorites';
-  favoriteButton.style.cssText = `
-    background-color: #10a37f;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin-right: 10px;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  `;
-  
-  // Add click event
-  favoriteButton.addEventListener('click', async () => {
-    try {
-      // Get chat content
-      const chatContent = getChatGPTContent();
-      
-      // Send to background script
-      const response = await chrome.runtime.sendMessage({
-        type: 'ADD_TO_FAVORITES',
-        data: chatContent
-      });
-      
-      if (response && response.status === 'ok') {
-        showNotification('Added to Favorites! ⭐');
-      } else {
-        showNotification('Error adding to favorites: ' + (response?.error || 'Unknown error'), true);
-      }
-    } catch (error) {
-      console.error('Error adding to favorites:', error);
-      showNotification('Error adding to favorites: ' + error.message, true);
-    }
-  });
-  
-  // Add button to header
-  headerElement.insertBefore(favoriteButton, headerElement.firstChild);
-  console.log('Added favorite button to ChatGPT interface');
-}
+// REMOVED: This function is no longer used as the button was interfering with ChatGPT interface
+// Favorites functionality is available through context menu (right-click) instead
 
 // Function to load external CSS file
 function loadCSS(file) {
@@ -423,20 +366,9 @@ async function initializeContentScript() {
       subtree: true 
     });
   } else if (isChatGPT()) {
-    // For ChatGPT, only add the favorite button without loading any styles
-    console.log('ChatGPT detected - only adding favorite button');
-    // Wait for the page to fully load
-    setTimeout(addFavoriteButtonToChatGPT, 2000);
-    
-    // Also add a mutation observer to handle dynamic changes
-    const observer = new MutationObserver((mutations) => {
-      addFavoriteButtonToChatGPT();
-    });
-    
-    observer.observe(document.body, { 
-      childList: true, 
-      subtree: true 
-    });
+    // For ChatGPT, do not add any UI buttons to avoid interfering with the interface
+    // Favorite functionality is available through context menu (right-click)
+    console.log('ChatGPT detected - favorites available via context menu only');
   } else if (isGrok()) {
     // For Grok, only add the favorite button without loading any styles
     console.log('Grok detected - only adding favorite button');
@@ -651,10 +583,68 @@ function getDeepSeekChatContent() {
 // Function to get chat content from Google AI Studio
 function getGoogleAIChatContent() {
   const messages = [];
+  console.log('Starting to extract Google AI Studio chat content...');
   
   // Find all chat turn containers with updated selectors
   const userMessages = document.querySelectorAll('.chat-turn-container.render.user');
   const assistantMessages = document.querySelectorAll('.chat-turn-container.model.render');
+  
+  console.log(`Found ${userMessages.length} user messages and ${assistantMessages.length} assistant messages with primary selectors`);
+  
+  // If no messages found with these selectors, try alternative selectors
+  if ((!userMessages || userMessages.length === 0) && (!assistantMessages || assistantMessages.length === 0)) {
+    // Try to find all message containers with more generic selectors
+    const allTurns = document.querySelectorAll('.chat-turn, [role="region"][aria-label*="chat"], [data-message-id]');
+    
+    if (allTurns && allTurns.length > 0) {
+      // Process each message container
+      allTurns.forEach(turn => {
+        // Try to determine if user or assistant
+        const isUser = turn.classList.contains('user') || 
+                      turn.getAttribute('aria-label')?.includes('User') ||
+                      turn.querySelector('.user-message, .human-message, [role="user"]');
+        
+        // Get content
+        const contentElement = turn.querySelector('.content, .message-content, .text-content, .chat-turn-content') || turn;
+        
+        if (contentElement) {
+          // Clean the content
+          const clone = contentElement.cloneNode(true);
+          const buttonsToRemove = clone.querySelectorAll('button, [role="button"]');
+          buttonsToRemove.forEach(button => button.remove());
+          
+          // Add to messages
+          const position = Array.from(document.body.querySelectorAll('*')).indexOf(turn);
+          messages.push({
+            role: isUser ? 'user' : 'assistant',
+            position: position,
+            content: clone.textContent.trim(),
+            html: clone.innerHTML.trim()
+          });
+        }
+      });
+      
+      // Sort by position
+      messages.sort((a, b) => a.position - b.position);
+      
+      if (messages.length > 0) {
+        // Get chat title
+        const titleElement = document.querySelector('title');
+        const title = titleElement ? titleElement.textContent.trim() : 'Google AI Chat';
+        
+        return {
+          status: 'ok',
+          title,
+          messages,
+          metadata: {
+            source: 'google-ai',
+            url: window.location.href,
+            savedAt: new Date().toISOString()
+          }
+        };
+      }
+    }
+  }
   
   // Helper function to clean message content
   function cleanMessageContent(element) {
@@ -677,7 +667,9 @@ function getGoogleAIChatContent() {
   // Add user messages to the array
   userMessages.forEach(elem => {
     const cleanContent = cleanMessageContent(elem);
-    const position = Array.from(document.body.querySelectorAll('*')).indexOf(elem);
+    // Use parentNode to get the entire chat turn for better position calculation
+    const container = elem.closest('.chat-turn') || elem;
+    const position = Array.from(document.body.querySelectorAll('*')).indexOf(container);
     allMessages.push({
       role: 'user',
       position: position,
@@ -688,7 +680,9 @@ function getGoogleAIChatContent() {
   // Add assistant messages to the array
   assistantMessages.forEach(elem => {
     const cleanContent = cleanMessageContent(elem);
-    const position = Array.from(document.body.querySelectorAll('*')).indexOf(elem);
+    // Use parentNode to get the entire chat turn for better position calculation
+    const container = elem.closest('.chat-turn') || elem;
+    const position = Array.from(document.body.querySelectorAll('*')).indexOf(container);
     allMessages.push({
       role: 'assistant',
       position: position,
@@ -699,11 +693,182 @@ function getGoogleAIChatContent() {
   // Sort all message elements by their DOM position
   allMessages.sort((a, b) => a.position - b.position);
   
+  console.log(`After primary extraction: found ${allMessages.length} messages in total`);
+  
+  // If still no messages found, try even more aggressive selectors
+  if (allMessages.length === 0 || allMessages.length === 1) {
+    console.log('Using aggressive selectors to find all messages');
+    
+    // Try to find all possible message containers using a variety of selectors
+    // This includes potential selectors used in different Google AI Studio versions
+    const possibleSelectors = [
+      '.chat-turn-root', // Main chat turn container
+      '.chat-turn-container', // Chat turn container
+      '.chat-turn', // Another chat turn class
+      '.message-container', // Generic message container
+      '[role="region"]', // ARIA role for regions
+      '[data-testid*="chat-turn"]', // Test IDs
+      '[data-testid*="message"]',
+      '[aria-label*="chat"]', // ARIA labels
+      '.gemini-chat-turn', // Specific to Gemini-like interfaces
+      '.model-response', // Model responses
+      '.user-input, .user-query', // User inputs
+      '.chat-message', // Generic chat message class
+      '.conversation-turn', // Another conversation turn class
+      '.ai-response-container', // AI response containers
+      '.human-query-container', // Human query containers
+      '.message-thread-item', // Thread items
+      '.user-message-container', // User message containers
+      '.assistant-message-container', // Assistant message containers
+      '.prompt-response', // Prompt responses
+      '.prompt-text, .response-text', // Prompt and response texts
+      '[role="listitem"]', // List items in a chat
+      '.chat-bubble' // Chat bubbles
+    ];
+    
+    // Create a unified selector
+    const unifiedSelector = possibleSelectors.join(', ');
+    const potentialMessages = document.querySelectorAll(unifiedSelector);
+    
+    // Already processed DOM elements (to avoid duplicates)
+    const processedElements = new Set(allMessages.map(m => m.domElement).filter(Boolean));
+    
+    // Process each potential message container
+    potentialMessages.forEach(element => {
+      // Skip if already processed
+      if (processedElements.has(element)) return;
+      
+      // Try to determine the role (user vs assistant)
+      const isUserTurn = 
+        element.classList.contains('user') || 
+        element.getAttribute('data-testid')?.includes('user') ||
+        element.getAttribute('aria-label')?.includes('User') ||
+        element.classList.contains('user-query') ||
+        element.classList.contains('user-input') ||
+        element.querySelector('.user-avatar, .human-avatar');
+      
+      // Skip containers without substantial content
+      const textContent = element.textContent.trim();
+      if (!textContent || textContent.length < 5) return;
+      
+      // Skip UI elements that aren't actual messages (buttons, etc.)
+      if (element.tagName === 'BUTTON' || 
+          element.getAttribute('role') === 'button' ||
+          (element.children.length === 0 && element.textContent.length < 10)) {
+        return;
+      }
+      
+      // Clean the content 
+      const clone = element.cloneNode(true);
+      const buttonsToRemove = clone.querySelectorAll('button, [role="button"], svg, .action-button, .copy-button');
+      buttonsToRemove.forEach(button => button.remove());
+      
+      // Add to messages with DOM position for sorting
+      const position = Array.from(document.body.querySelectorAll('*')).indexOf(element);
+      
+      allMessages.push({
+        role: isUserTurn ? 'user' : 'assistant',
+        position: position,
+        content: clone.textContent.trim(),
+        html: clone.innerHTML.trim(),
+        domElement: element // Store reference to avoid duplicates
+      });
+      
+      // Mark as processed
+      processedElements.add(element);
+    });
+    
+    // Sort again by DOM position
+    allMessages.sort((a, b) => a.position - b.position);
+    
+    // Filter out references to DOM elements before returning
+    allMessages = allMessages.map(({ domElement, ...rest }) => rest);
+    
+    console.log(`After aggressive selectors: found ${allMessages.length} messages in total`);
+  }
+  
+  // Additional method: Find pairs of elements that might represent Q&A pairs
+  // This is useful for interfaces where the chat is displayed as paired elements
+  if (allMessages.length === 0 || allMessages.length < 2) {
+    console.log('Using Q&A pair detection to find messages');
+    
+    // Look for sequences where a user message is followed by an assistant message
+    const userPrompts = document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"]');
+    
+    userPrompts.forEach(prompt => {
+      // Skip if not visible or very small
+      if (prompt.offsetHeight === 0 || prompt.value?.length < 3) return;
+      
+      // Find the closest response container (usually follows the prompt)
+      let responseContainer = null;
+      let current = prompt.parentElement;
+      
+      // Look up to 5 levels up to find a common container
+      for (let i = 0; i < 5 && current; i++) {
+        // Try to find a response element that's a sibling or child of a sibling
+        const siblings = Array.from(current.parentElement?.children || []);
+        const index = siblings.indexOf(current);
+        
+        // Check elements that follow the current one in the DOM
+        if (index !== -1 && index < siblings.length - 1) {
+          for (let j = index + 1; j < siblings.length; j++) {
+            const potentialResponse = siblings[j].querySelector('.ai-response, .model-response, .assistant-message') || siblings[j];
+            
+            if (potentialResponse && potentialResponse.textContent.trim().length > 10) {
+              responseContainer = potentialResponse;
+              break;
+            }
+          }
+        }
+        
+        if (responseContainer) break;
+        current = current.parentElement;
+      }
+      
+      // If we found a prompt-response pair
+      if (responseContainer) {
+        // Get prompt text (value for inputs, textContent for contenteditable)
+        const promptText = prompt.value || prompt.textContent.trim();
+        
+        if (promptText && promptText.length > 0) {
+          // Add the user message
+          const userPosition = Array.from(document.body.querySelectorAll('*')).indexOf(prompt);
+          allMessages.push({
+            role: 'user',
+            position: userPosition,
+            content: promptText,
+            html: promptText
+          });
+          
+          // Add the assistant response
+          const assistantPosition = Array.from(document.body.querySelectorAll('*')).indexOf(responseContainer);
+          
+          // Clean the response content
+          const clone = responseContainer.cloneNode(true);
+          const buttonsToRemove = clone.querySelectorAll('button, [role="button"], svg, .action-button, .copy-button');
+          buttonsToRemove.forEach(button => button.remove());
+          
+          allMessages.push({
+            role: 'assistant',
+            position: assistantPosition,
+            content: clone.textContent.trim(),
+            html: clone.innerHTML.trim()
+          });
+        }
+      }
+    });
+    
+    // Sort again by position
+    allMessages.sort((a, b) => a.position - b.position);
+    
+    console.log(`After Q&A pair detection: found ${allMessages.length} messages in total`);
+  }
+  
   // Get chat title
   const titleElement = document.querySelector('title');
   const title = titleElement ? titleElement.textContent.trim() : 'Google AI Chat';
-
-  return {
+  
+  const result = {
     status: 'ok',
     title,
     messages: allMessages,
@@ -713,6 +878,13 @@ function getGoogleAIChatContent() {
       savedAt: new Date().toISOString()
     }
   };
+  
+  console.log(`Final message count: ${allMessages.length}, message sample:`, 
+    allMessages.length > 0 ? 
+      [allMessages[0], allMessages.length > 1 ? allMessages[allMessages.length-1] : null] : 
+      'No messages found');
+  
+  return result;
 }
 
 // Function to get chat content from ChatGPT
@@ -1108,30 +1280,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     switch (message.type) {
       case 'GET_CHAT_INFO':
+        console.log('Processing GET_CHAT_INFO request');
         const service = getCurrentService();
+        console.log('Detected service:', service);
         let response;
 
         switch (service) {
           case 'deepseek':
+            console.log('Getting DeepSeek chat content');
             response = getDeepSeekChatContent();
             break;
           case 'google-ai':
+            console.log('Getting Google AI Studio chat content');
             response = getGoogleAIChatContent();
             break;
           case 'chatgpt':
+            console.log('Getting ChatGPT chat content');
             response = getChatGPTContent();
             break;
           case 'grok':
+            console.log('Getting Grok chat content');
             response = getGrokChatContent();
             break;
           case 'claude':
+            console.log('Getting Claude chat content');
             response = getClaudeChatContent();
             break;
           case 'gemini':
+            console.log('Getting Gemini chat content');
             response = getGeminiChatContent();
             break;
           default:
+            console.log('Unsupported chat service');
             response = { status: 'error', error: 'Unsupported chat service' };
+        }
+        
+        console.log('GET_CHAT_INFO response status:', response.status);
+        if (response.status === 'ok') {
+          console.log('Messages count:', response.messages?.length || 0);
+          if (response.messages && response.messages.length > 0) {
+            console.log('First message:', response.messages[0].role);
+            console.log('Last message:', response.messages[response.messages.length - 1].role);
+          } else {
+            console.log('No messages found');
+          }
+        } else {
+          console.log('Error in response:', response.error);
         }
 
         sendResponse(response);
@@ -1161,7 +1355,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Shared notification function for all platforms
 function showNotification(message, isError = false) {
+  console.log('Showing notification:', message, 'isError:', isError, 'current site:', window.location.href);
+  
   if (isGoogleAIStudio()) {
+    console.log('Using Google AI Studio specific notification');
     showGoogleAIStudioNotification(message, isError);
   } else if (isChatGPT()) {
     // For ChatGPT, use simple notification
@@ -1327,124 +1524,203 @@ function showDeepSeekNotification(message, isError = false) {
 function showGoogleAIStudioNotification(message, isError = false) {
   console.log('showGoogleAIStudioNotification called with message:', message, 'isError:', isError);
   
-  // Create host element
-  const host = document.createElement('div');
-  host.id = 'deepseek-notification-host';
-  host.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 2147483647;
-    max-width: 300px;
-    width: 280px;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  `;
-  
-  // Create shadow root
-  const shadow = host.attachShadow({ mode: 'open' });
-  
-  // Create styles
-  const style = document.createElement('style');
-  style.textContent = `
-    .notification {
-      position: relative;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 16px;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: opacity 0.3s ease, transform 0.3s ease;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      width: 240px;
-      box-sizing: border-box;
-      text-align: left;
+  try {
+    // Если есть существующий элемент уведомления, удаляем его
+    const existingNotification = document.getElementById('deepseek-notification-host');
+    if (existingNotification) {
+      console.log('Removing existing notification element');
+      existingNotification.remove();
+    }
+    
+    // Create host element
+    const host = document.createElement('div');
+    host.id = 'deepseek-notification-host';
+    host.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2147483647;
+      max-width: 300px;
+      width: 280px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    `;
+    
+    // Create shadow root
+    const shadow = host.attachShadow({ mode: 'open' });
+    
+    // Create styles
+    const style = document.createElement('style');
+    style.textContent = `
+      .notification {
+        position: relative;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 16px;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        width: 240px;
+        box-sizing: border-box;
+        text-align: left;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      }
+      
+      .notification.success {
+        background: rgba(25, 135, 84, 0.95);
+        color: white;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .notification.error {
+        background: rgba(220, 53, 69, 0.95);
+        color: white;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .notification.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      
+      .title {
+        font-weight: 600;
+        font-size: 16px;
+        line-height: 1.4;
+        margin: 0;
+        padding: 0;
+      }
+      
+      .description {
+        font-size: 14px;
+        line-height: 1.4;
+        margin: 4px 0 0 0;
+        padding: 0;
+      }
+      
+      .close-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: transparent;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 16px;
+        opacity: 0.7;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+      
+      .close-btn:hover {
+        opacity: 1;
+      }
+    `;
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${isError ? 'error' : 'success'}`;
+    
+    // Add close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'close-btn';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = () => {
+      notification.classList.remove('show');
+      setTimeout(() => {
+        if (host && host.parentNode) {
+          host.parentNode.removeChild(host);
+          console.log('Notification closed by user');
+        }
+      }, 300);
+    };
+    notification.appendChild(closeBtn);
+    
+    // Parse message if it's an object with title and description
+    if (typeof message === 'object' && message.title) {
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = message.title;
+      notification.appendChild(title);
+      
+      if (message.description) {
+        const description = document.createElement('div');
+        description.className = 'description';
+        description.textContent = message.description;
+        notification.appendChild(description);
+      }
+    } else {
+      // Simple string message
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = message;
+      notification.appendChild(title);
     }
     
-    .notification.success {
-      background: rgba(25, 135, 84, 0.95);
-      color: white;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
+    // Add elements to shadow DOM
+    shadow.appendChild(style);
+    shadow.appendChild(notification);
     
-    .notification.error {
-      background: rgba(220, 53, 69, 0.95);
-      color: white;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
+    // Add host to document
+    document.body.appendChild(host);
+    console.log('Added notification host to document.body');
     
-    .notification.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    
-    .title {
-      font-weight: 600;
-      font-size: 16px;
-      line-height: 1.4;
-      margin: 0;
-      padding: 0;
-    }
-    
-    .description {
-      font-size: 14px;
-      line-height: 1.4;
-      margin: 4px 0 0 0;
-      padding: 0;
-    }
-  `;
-  
-  // Create notification element
-  const notification = document.createElement('div');
-  notification.className = `notification ${isError ? 'error' : 'success'}`;
-  
-  // Parse message if it's an object with title and description
-  if (typeof message === 'object' && message.title) {
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = message.title;
-    notification.appendChild(title);
-    
-    if (message.description) {
-      const description = document.createElement('div');
-      description.className = 'description';
-      description.textContent = message.description;
-      notification.appendChild(description);
-    }
-  } else {
-    // Simple string message
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = message;
-    notification.appendChild(title);
-  }
-  
-  // Add elements to shadow DOM
-  shadow.appendChild(style);
-  shadow.appendChild(notification);
-  
-  // Add host to document
-  document.body.appendChild(host);
-  console.log('Added notification host to document.body');
-  
-  // Show notification with animation
-  setTimeout(() => {
-    notification.classList.add('show');
-    console.log('Added show class to notification in shadow DOM');
-  }, 10);
-  
-  // Auto-hide after 3 seconds
-  setTimeout(() => {
-    notification.classList.remove('show');
+    // Show notification with animation
     setTimeout(() => {
-      host.remove();
-      console.log('Removed notification host from DOM');
-    }, 300); // Wait for fade out animation
-  }, 3000);
+      notification.classList.add('show');
+      console.log('Added show class to notification in shadow DOM');
+    }, 10);
+    
+    // Auto-hide after 4 seconds (longer time for user to read)
+    setTimeout(() => {
+      if (notification) {
+        notification.classList.remove('show');
+        setTimeout(() => {
+          if (host && host.parentNode) {
+            host.parentNode.removeChild(host);
+            console.log('Removed notification host from DOM');
+          }
+        }, 300); // Wait for fade out animation
+      }
+    }, 4000);
+  } catch (error) {
+    console.error('Error showing notification:', error);
+    
+    // Fallback to simple notification if shadow DOM fails
+    try {
+      const simpleNotification = document.createElement('div');
+      simpleNotification.textContent = message;
+      simpleNotification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        background: ${isError ? 'rgba(220, 53, 69, 0.95)' : 'rgba(25, 135, 84, 0.95)'};
+        color: white;
+        border-radius: 8px;
+        z-index: 2147483647;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        font-family: sans-serif;
+      `;
+      document.body.appendChild(simpleNotification);
+      
+      setTimeout(() => {
+        if (document.body.contains(simpleNotification)) {
+          document.body.removeChild(simpleNotification);
+        }
+      }, 4000);
+    } catch (fallbackError) {
+      console.error('Even fallback notification failed:', fallbackError);
+    }
+  }
 }
 
 // Function to show notification in Grok
@@ -1872,7 +2148,7 @@ function addFavoriteButtonToGemini() {
           
           if (response && response.status === 'ok') {
             success = true;
-            showGeminiNotification('Added to Favorites! ⭐');
+            showNotification('Added to Favorites! ⭐');
             break;
           } else {
             lastError = response?.error || 'Unknown error';
@@ -1889,7 +2165,7 @@ function addFavoriteButtonToGemini() {
       }
       
       if (!success) {
-        showGeminiNotification('Error adding to favorites: ' + lastError, true);
+        showNotification('Error adding to favorites: ' + lastError, true);
       }
       
       // Re-enable button
@@ -1898,7 +2174,7 @@ function addFavoriteButtonToGemini() {
       favoriteButton.innerHTML = '⭐ Add to Favorites';
     } catch (error) {
       console.error('Error adding to favorites:', error);
-      showGeminiNotification('Error adding to favorites: ' + error.message, true);
+      showNotification('Error adding to favorites: ' + error.message, true);
       
       // Re-enable button
       favoriteButton.disabled = false;

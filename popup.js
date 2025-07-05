@@ -633,7 +633,7 @@ async function generateAndDisplaySummary() {
       type: 'GENERATE_TEXT',
       prompt: prompt,
       provider: settings.provider,
-      model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model, // Force use known working model for Google
+      model: settings.model, // Use selected model from settings
       apiKey: settings.apiKeys[settings.provider]
     });
 
@@ -1287,6 +1287,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (favoritesTab && favoritesTab.classList.contains('active')) {
       loadFavorites();
     }
+    return true;
+  }
+  
+  // Обработчик для автоматического обновления истории чата после добавления через контекстное меню
+  if (message.type === 'AUTO_UPDATE_CHAT_HISTORY') {
+    console.log('Received AUTO_UPDATE_CHAT_HISTORY message for favorite ID:', message.favoriteId);
+    
+    // Асинхронная функция для управления автоматическим обновлением
+    (async () => {
+      try {
+        // Сначала убедиться, что избранное загружено
+        await loadFavorites();
+        
+        // Найти избранное по ID
+        const favorites = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+        if (favorites.status !== 'ok' || !favorites.favorites) {
+          throw new Error('Failed to get favorites list');
+        }
+        
+        const favorite = favorites.favorites.find(f => f.id === message.favoriteId);
+        if (!favorite) {
+          throw new Error(`Favorite with ID ${message.favoriteId} not found`);
+        }
+        
+        console.log('Found favorite to auto-update:', favorite.title);
+        
+        // Эмулировать открытие окна истории чата
+        showChatHistory(null, favorite);
+        
+        // Найти кнопку Update Chat
+        const updateButton = document.getElementById('updateChatBtn');
+        if (!updateButton) {
+          throw new Error('Update button not found');
+        }
+        
+        console.log('Found Update Chat button, triggering click after delay');
+        
+        // Добавить небольшую задержку перед кликом
+        setTimeout(() => {
+          // Эмулировать нажатие кнопки Update Chat
+          updateButton.click();
+          console.log('Auto-clicked Update Chat button');
+        }, 300);
+        
+      } catch (error) {
+        console.error('Error in AUTO_UPDATE_CHAT_HISTORY handler:', error);
+      }
+    })();
+    
     return true;
   }
   
@@ -3488,24 +3537,20 @@ const DEFAULT_SETTINGS = {
     google: ''
   },
   model: '',
-  titlePrompt: 'Come up with a great expanded title for this article fully reflecting its essence, the title should be in the same language as the article, up to 70 characters, no tags, no highlighting characters, no quotation marks at the beginning and end of the title:{text}',
+  titlePrompt: 'Come up with a great expanded title for this whole chat fully reflecting its essence, the title should be in the same language as the chat, up to 75 characters, no tags, no highlighting characters, no quotation marks:{text}',
   summaryPrompt: 'Generate a concise summary of this chat conversation in 3-4 sentences. No more than 300 characters. No mention of the user or the assistant. Just the most important thing, the very essence of the chat. You don\'t need introductory words. Just the gist. The problem and its solution. You don\'t need introductory words about what the user was interested in and who answered him. Highlight only the important points in html format using the html tags <b> and </b>, but not all of the text. Don\'t use the word summary or similar at the beginning of the summary. No introductory words or titles before summary. Summarize should be in the language in which most of the chat is written. If there is even a bit of text in Russian, summarize should be in Russian. Ignore the message: "The server is busy. Please try again later." When you make a summary, don\'t write about the need for a doctor\'s consultation. Don\'t use markdown. Convey the most important point:{text}',
-  tagsPrompt: 'Generate 1-3 relevant tags for this chat. Rules: 1. Each tag should be 1-2 words, separated by spaces. Always separate two words in the same tag with a hyphen. No more than two words can be separated by a hyphen. 2. Tags should reflect the main topics, technologies, or concepts discussed. 3. If the chat has anything to do with programming or programs or software, your first tag should be: programming. 4. If the chat has anything to do with artificial intelligence, your first tag should be ai, and then the second tag should be the name of that ai. 5. If the chat has anything to do with a large language machine or a chatbot or something similar, then your first tag should be: llm, followed by the name of that chatbot. 6. If the chat has something to do with health, treatment, gymnastics, fitness improvement, recipes for health, then the first tag should be the word health. 7. Return only the tags without quotes or commas:{text}'
+  tagsPrompt: 'Generate 1-3 relevant tags for this chat. Rules: 1. Each tag MUST be ONE WORD ONLY or at most TWO WORDS CONNECTED BY A HYPHEN (example: "artificial-intelligence"). 2. DO NOT use multi-word tags separated by spaces. 3. Tags should reflect the main topics, technologies, or concepts discussed. 4. If the chat has anything to do with programming, your first tag should be: programming. 5. If the chat has anything to do with artificial intelligence, your first tag should be ai. 6. If the chat has anything to do with a language model or a chatbot, then your first tag should be: llm. 7. If the chat has something to do with health, your first tag should be: health. 8. Return only the tags, separated by commas WITHOUT any additional text:{text}'
 };
 
 // Models available for each provider
 const PROVIDER_MODELS = {
   openrouter: [
-    { id: 'google/gemini-2.0-flash-001', name: 'gemini-2.0-flash' },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek-V3' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o mini' },
-    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'The Meta Llama 3.3' }
+    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash' },   
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' }    
   ],
   google: [
-    { id: 'models/gemini-2.0-flash-001', name: 'gemini-2.0-flash' },
-    { id: 'models/gemini-2.0-pro-exp-02-05', name: 'gemini-2.0-pro' },
-    { id: 'models/gemini-2.0-flash-thinking-exp-01-21', name: 'gemini-2.0-flash-thinking-exp' },
-    { id: 'models/gemini-2.0-flash-exp', name: 'gemini-2.0-flash-exp' }
+    { id: 'models/gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+    { id: 'models/gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' }
   ]
 };
 
@@ -3513,6 +3558,16 @@ const PROVIDER_MODELS = {
 async function loadSettings() {
   return new Promise((resolve) => {
     chrome.storage.sync.get('settings', (result) => {
+      const DEFAULT_SETTINGS = {
+        provider: 'openrouter',
+        model: 'anthropic/claude-3-opus:beta',
+        apiKeys: {},
+        titlePrompt: 'Generate a concise and descriptive title for this chat conversation. The title should capture the main topic or purpose of the conversation. Return only the title with no quotes or additional text.',
+        summaryPrompt: 'Generate a concise description or summary of this chat conversation. Focus on the main topics discussed, key questions asked, and important conclusions reached. Keep it under 2-3 sentences. Return only the summary with no additional formatting or text.',
+        tagsPrompt: 'Generate 3-5 tags for this chat conversation. Rules: 1. Each tag MUST be ONE WORD ONLY or at most TWO WORDS CONNECTED BY A HYPHEN (example: "artificial-intelligence"). 2. DO NOT use multi-word tags separated by spaces. 3. Tags should reflect the main topics, technologies, or concepts discussed. Return only the tags as a comma-separated list, without any additional text or formatting.',
+        autoGenerateMetadata: false
+      };
+      
       const settings = result.settings || DEFAULT_SETTINGS;
       
       // Migrate old Google AI models to new ones
@@ -3539,6 +3594,11 @@ async function loadSettings() {
           settings.model = 'models/' + settings.model;
           saveSettings(settings);
         }
+      }
+      
+      // Ensure autoGenerateMetadata is set (maintain backward compatibility)
+      if (settings.autoGenerateMetadata === undefined) {
+        settings.autoGenerateMetadata = false;
       }
       
       resolve(settings);
@@ -3885,6 +3945,7 @@ async function initSettingsModal() {
   document.getElementById('titlePromptInput').value = settings.titlePrompt || DEFAULT_SETTINGS.titlePrompt;
   document.getElementById('summaryPromptInput').value = settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt;
   document.getElementById('tagsPromptInput').value = settings.tagsPrompt || DEFAULT_SETTINGS.tagsPrompt;
+  document.getElementById('autoGenerateMetadataCheckbox').checked = settings.autoGenerateMetadata || false;
   
   // Create a debounced save function
   const saveSettingsDebounced = debounce(async () => {
@@ -3895,6 +3956,7 @@ async function initSettingsModal() {
       const titlePrompt = document.getElementById('titlePromptInput').value;
       const summaryPrompt = document.getElementById('summaryPromptInput').value;
       const tagsPrompt = document.getElementById('tagsPromptInput').value;
+      const autoGenerateMetadata = document.getElementById('autoGenerateMetadataCheckbox').checked;
       
       // Update settings object
       settings.provider = provider;
@@ -3903,6 +3965,7 @@ async function initSettingsModal() {
       settings.titlePrompt = titlePrompt;
       settings.summaryPrompt = summaryPrompt;
       settings.tagsPrompt = tagsPrompt;
+      settings.autoGenerateMetadata = autoGenerateMetadata;
       
       // Save to storage
       await saveSettings(settings);
@@ -4083,7 +4146,7 @@ async function initSettingsModal() {
         type: 'GENERATE_TEXT',
         prompt: prompt,
         provider: settings.provider,
-        model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model, // Force use known working model for Google
+        model: settings.model, // Use selected model from settings
         apiKey: settings.apiKeys[settings.provider]
       });
 
@@ -4105,6 +4168,9 @@ async function initSettingsModal() {
       generateBtn.innerHTML = '<svg class="ai-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
     }
   });
+
+  // Add event listener for the autoGenerateMetadata checkbox
+  document.getElementById('autoGenerateMetadataCheckbox').addEventListener('change', saveSettingsDebounced);
 }
 
 // Function to get combined tag frequencies from both favorites and prompts
@@ -4645,7 +4711,7 @@ async function generateTagsWithAI(favorite) {
       settings: {
         provider: settings.provider,
         apiKey: settings.apiKeys[settings.provider],
-        model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model // Force use known working model for Google
+        model: settings.model // Use selected model from settings
       }
     });
 
@@ -4670,7 +4736,21 @@ async function generateTagsWithAI(favorite) {
     const tagsList = response.tags
       .split(/[,\s]+/) // Split by commas and/or spaces
       .map(tag => tag.trim().toLowerCase())
-      .filter(tag => tag && tag.length > 0); // Remove empty tags
+      .filter(tag => tag && tag.length > 0) // Remove empty tags
+      .map(tag => {
+        // Проверяем и корректируем формат тегов
+        // Если тег содержит пробелы, заменяем их на дефисы
+        const words = tag.split(/\s+/);
+        // Если больше двух слов, берем только первые два
+        if (words.length > 2) {
+          return words.slice(0, 2).join('-');
+        } else if (words.length === 2) {
+          // Если два слова, соединяем их дефисом
+          return words.join('-');
+        }
+        // Одно слово или уже с дефисом оставляем как есть
+        return tag;
+      });
 
     // Combine preserved tags with new tags, removing duplicates
     const allTags = [...new Set([...preservedTags, ...tagsList])];
@@ -4903,7 +4983,7 @@ async function generateDescriptionWithAI(favorite) {
       type: 'GENERATE_TEXT',
       prompt: prompt,
       provider: settings.provider,
-      model: settings.provider === 'google' ? 'models/gemini-2.0-flash-001' : settings.model, // Force use known working model for Google
+      model: settings.model, // Use selected model from settings
       apiKey: settings.apiKeys[settings.provider]
     });
 
