@@ -19,7 +19,3 @@ This is a browser extension that enhances your experience with various AI chat p
 ## Usage
 
 The extension adds a context menu item to save chats. You can also manage your saved chats through the extension's popup.
-
-## Add functions
-
-Will add later...
